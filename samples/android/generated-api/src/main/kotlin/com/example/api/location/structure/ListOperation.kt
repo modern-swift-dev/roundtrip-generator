@@ -1,0 +1,38 @@
+// Generated code. Do not edit.
+package com.example.api.location.structure
+
+import com.example.api.ApiRequest
+import com.example.api.ApiRequestConvertible
+import com.example.api.ApiRequestPath
+import com.example.api.StructureType
+import com.example.api.toApiFormValue
+
+object ListOperation {
+    data class Request(
+        val text: String? = null,
+        val type: List<StructureType>,
+    ) : ApiRequestConvertible {
+        override fun toApiRequest(): ApiRequest =
+            ApiRequest(
+                method = "GET",
+                path = requestPath(),
+                queryParameters = queryParameters(),
+                headers = headers(),
+                body = null,
+                bodyType = null,
+                contentType = null,
+                accept = "application/json",
+            )
+
+        private fun requestPath(): ApiRequestPath = ApiRequestPath.Relative(path = "/structure")
+
+        private fun queryParameters(): Map<String, String> {
+            val values = mutableMapOf<String, String>()
+            text?.let { values["text"] = it.toApiFormValue() }
+            values["type"] = type.joinToString(",") { it.rawValue.toApiFormValue() }
+            return values
+        }
+
+        private fun headers(): Map<String, String> = emptyMap()
+    }
+}

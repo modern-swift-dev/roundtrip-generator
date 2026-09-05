@@ -1,0 +1,13 @@
+.build/
+.swiftpm/
+build/
+node_modules/
+.gradle/
+.kotlin/
+.idea/
+local.properties
+dist/
+.DS_Store
+DerivedData/
+xcuserdata/
+*.xcresult

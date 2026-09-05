@@ -1,0 +1,24 @@
+{
+  "originHash" : "b015d291b24b4c93a50c8c4fe3e0ebf5802dcd62f07dcb888e7b45955719171a",
+  "pins" : [
+    {
+      "identity" : "kronos",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/MobileNativeFoundation/Kronos.git",
+      "state" : {
+        "revision" : "f331821314f9b35867a18c5c8fc2f918536d79ac",
+        "version" : "4.3.1"
+      }
+    },
+    {
+      "identity" : "roundtrip-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/modern-swift-dev/roundtrip-swift.git",
+      "state" : {
+        "revision" : "f3e755cd89a36fab447ef26d0d90874f2e3c9fdf",
+        "version" : "1.0.1"
+      }
+    }
+  ],
+  "version" : 3
+}

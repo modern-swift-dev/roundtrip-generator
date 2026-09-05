@@ -1,0 +1,2088 @@
+# Generated code. Do not edit.
+openapi: 3.1.2
+info:
+  title: "Global"
+  version: "1.0.0"
+paths:
+  "/_runtime/{runtimeUrl}":
+    get:
+      operationId: "ShowcaseSampleModelsFollowRuntimeUrl"
+      summary: "FollowRuntimeUrl"
+      tags:
+        - "Showcase.SampleModels"
+      x-runtime-url: true
+      security:
+        -
+          apiKey: []
+        - {}
+      parameters:
+        -
+          name: "runtimeUrl"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+            format: "uri"
+        -
+          name: "Authorization"
+          in: "header"
+          required: false
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedResultsPrimitiveMatrix"
+  "/group":
+    post:
+      operationId: "AdminGroupCreate"
+      summary: "Create"
+      tags:
+        - "Admin.Group"
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Group"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdGroup"
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdGroup"
+    get:
+      operationId: "AdminGroupList"
+      summary: "List"
+      tags:
+        - "Admin.Group"
+      security:
+        - {}
+      parameters:
+        -
+          name: "text"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedResultsIdentifiedGroup"
+  "/group/{group_id}":
+    delete:
+      operationId: "AdminGroupDelete"
+      summary: "Delete"
+      tags:
+        - "Admin.Group"
+      security:
+        - {}
+      parameters:
+        -
+          name: "group_id"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            format: "int64"
+      responses:
+        "200":
+          description: "No Error"
+        "204":
+          description: "No Content"
+        "205":
+          description: "Reset Content"
+    get:
+      operationId: "AdminGroupGet"
+      summary: "Get"
+      tags:
+        - "Admin.Group"
+      security:
+        - {}
+      parameters:
+        -
+          name: "group_id"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            format: "int64"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentifiedGroup"
+    patch:
+      operationId: "AdminGroupPatch"
+      summary: "Patch"
+      tags:
+        - "Admin.Group"
+      security:
+        - {}
+      parameters:
+        -
+          name: "group_id"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            format: "int64"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchedGroup"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdGroup"
+    put:
+      operationId: "AdminGroupUpdate"
+      summary: "Update"
+      tags:
+        - "Admin.Group"
+      security:
+        - {}
+      parameters:
+        -
+          name: "group_id"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            format: "int64"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Group"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdGroup"
+  "/project":
+    post:
+      operationId: "TenantProjectCreate"
+      summary: "Create"
+      tags:
+        - "Tenant.Project"
+      security:
+        - {}
+      parameters:
+        -
+          name: "X-Tenant-Id"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Project"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdProject"
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdProject"
+    get:
+      operationId: "TenantProjectList"
+      summary: "List"
+      tags:
+        - "Tenant.Project"
+      security:
+        - {}
+      parameters:
+        -
+          name: "X-Tenant-Id"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "status"
+          in: "query"
+          required: false
+          schema:
+            type: "array"
+            items:
+              $ref: "#/components/schemas/TenantStatus"
+            default:
+              - "active"
+        -
+          name: "include_archived"
+          in: "query"
+          required: false
+          schema:
+            type: "boolean"
+            default: false
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                type: "array"
+                items:
+                  $ref: "#/components/schemas/IdentifiedProject"
+  "/project/{project_id}":
+    delete:
+      operationId: "TenantProjectDelete"
+      summary: "Delete"
+      tags:
+        - "Tenant.Project"
+      security:
+        - {}
+      parameters:
+        -
+          name: "X-Tenant-Id"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "project_id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: "No Error"
+        "204":
+          description: "No Content"
+        "205":
+          description: "Reset Content"
+    get:
+      operationId: "TenantProjectGet"
+      summary: "Get"
+      tags:
+        - "Tenant.Project"
+      security:
+        - {}
+      parameters:
+        -
+          name: "X-Tenant-Id"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "project_id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentifiedProject"
+    put:
+      operationId: "TenantProjectUpdate"
+      summary: "Update"
+      tags:
+        - "Tenant.Project"
+      security:
+        - {}
+      parameters:
+        -
+          name: "X-Tenant-Id"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "project_id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Project"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdProject"
+  "/project/{project_id}/archive":
+    post:
+      operationId: "TenantProjectArchive"
+      summary: "Archive"
+      tags:
+        - "Tenant.Project"
+      security:
+        -
+          apiKey: []
+      parameters:
+        -
+          name: "X-Tenant-Id"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "project_id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "cascade"
+          in: "query"
+          required: false
+          schema:
+            type: "boolean"
+            default: false
+        -
+          name: "Authorization"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+            default: ""
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdObject"
+        "202":
+          description: "Accepted"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdObject"
+  "/project/{project_id}/task":
+    post:
+      operationId: "TenantProjectTaskCreate"
+      summary: "Create"
+      tags:
+        - "Tenant.ProjectTask"
+      security:
+        - {}
+      parameters:
+        -
+          name: "X-Tenant-Id"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "project_id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Task"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdTask"
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdTask"
+    get:
+      operationId: "TenantProjectTaskList"
+      summary: "List"
+      tags:
+        - "Tenant.ProjectTask"
+      security:
+        - {}
+      parameters:
+        -
+          name: "X-Tenant-Id"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "project_id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "done"
+          in: "query"
+          required: false
+          schema:
+            type: "boolean"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedResultsIdentifiedTask"
+  "/project/{project_id}/task/{task_id}":
+    get:
+      operationId: "TenantProjectTaskGet"
+      summary: "Get"
+      tags:
+        - "Tenant.ProjectTask"
+      security:
+        - {}
+      parameters:
+        -
+          name: "X-Tenant-Id"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "project_id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "task_id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentifiedTask"
+    patch:
+      operationId: "TenantProjectTaskPatch"
+      summary: "Patch"
+      tags:
+        - "Tenant.ProjectTask"
+      security:
+        - {}
+      parameters:
+        -
+          name: "X-Tenant-Id"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "project_id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "task_id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchedTask"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdTask"
+  "/project/{project_id}/task/{task_id}/complete":
+    patch:
+      operationId: "TenantProjectTaskComplete"
+      summary: "Complete"
+      tags:
+        - "Tenant.ProjectTask"
+      security:
+        -
+          apiKey: []
+        - {}
+      parameters:
+        -
+          name: "X-Tenant-Id"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "project_id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "task_id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "notify"
+          in: "query"
+          required: false
+          schema:
+            type: "boolean"
+            default: true
+        -
+          name: "Authorization"
+          in: "header"
+          required: false
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: "object"
+              properties:
+                completed_at:
+                  type: "string"
+                  format: "date-time"
+              required:
+                - "completed_at"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdObject"
+  "/role":
+    post:
+      operationId: "AdminRoleCreate"
+      summary: "Create"
+      tags:
+        - "Admin.Role"
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Role"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdRole"
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdRole"
+    get:
+      operationId: "AdminRoleList"
+      summary: "List"
+      tags:
+        - "Admin.Role"
+      security:
+        - {}
+      parameters:
+        -
+          name: "text"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedResultsIdentifiedRole"
+  "/role/{role_id}":
+    delete:
+      operationId: "AdminRoleDelete"
+      summary: "Delete"
+      tags:
+        - "Admin.Role"
+      security:
+        - {}
+      parameters:
+        -
+          name: "role_id"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            format: "int64"
+      responses:
+        "200":
+          description: "No Error"
+        "204":
+          description: "No Content"
+        "205":
+          description: "Reset Content"
+    get:
+      operationId: "AdminRoleGet"
+      summary: "Get"
+      tags:
+        - "Admin.Role"
+      security:
+        - {}
+      parameters:
+        -
+          name: "role_id"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            format: "int64"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentifiedRole"
+    patch:
+      operationId: "AdminRolePatch"
+      summary: "Patch"
+      tags:
+        - "Admin.Role"
+      security:
+        - {}
+      parameters:
+        -
+          name: "role_id"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            format: "int64"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchedRole"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdRole"
+    put:
+      operationId: "AdminRoleUpdate"
+      summary: "Update"
+      tags:
+        - "Admin.Role"
+      security:
+        - {}
+      parameters:
+        -
+          name: "role_id"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            format: "int64"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Role"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdRole"
+  "/showcase/matrix/{matrix_id}":
+    get:
+      operationId: "ShowcaseSampleModelsGetMatrix"
+      summary: "GetMatrix"
+      tags:
+        - "Showcase.SampleModels"
+      security:
+        -
+          apiKey: []
+        - {}
+      parameters:
+        -
+          name: "matrix_id"
+          in: "path"
+          required: true
+          schema:
+            type: "string"
+        -
+          name: "visible"
+          in: "query"
+          required: true
+          schema:
+            type: "boolean"
+            default: true
+        -
+          name: "visibility"
+          in: "query"
+          required: true
+          schema:
+            $ref: "#/components/schemas/SampleVisibility"
+            default: "public"
+        -
+          name: "scores"
+          in: "query"
+          required: false
+          schema:
+            type: "array"
+            items:
+              $ref: "#/components/schemas/SampleScore"
+            default:
+              - 100
+        -
+          name: "X-Trace-Id"
+          in: "header"
+          required: false
+          schema:
+            type: "string"
+        -
+          name: "sample_session"
+          in: "cookie"
+          required: false
+          schema:
+            type: "string"
+        -
+          name: "Authorization"
+          in: "header"
+          required: false
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrimitiveMatrix"
+  "/showcase/notifications":
+    post:
+      operationId: "ShowcaseSampleModelsCreateNotification"
+      summary: "CreateNotification"
+      tags:
+        - "Showcase.SampleModels"
+      security:
+        -
+          apiKey: []
+      parameters:
+        -
+          name: "Idempotency-Key"
+          in: "header"
+          required: false
+          schema:
+            type: "string"
+        -
+          name: "Authorization"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+            default: ""
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationEnvelope"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationEnvelope"
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationEnvelope"
+        "202":
+          description: "Accepted"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationEnvelope"
+  "/showcase/uploads":
+    delete:
+      operationId: "ShowcaseTransportDeleteWithBody"
+      summary: "DeleteWithBody"
+      tags:
+        - "Showcase.Transport"
+      security:
+        -
+          apiKey: []
+      parameters:
+        -
+          name: "Authorization"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+            default: ""
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteReceiptRequest"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadReceipt"
+        "202":
+          description: "Accepted"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadReceipt"
+  "/showcase/uploads/binary":
+    post:
+      operationId: "ShowcaseTransportUploadBinary"
+      summary: "UploadBinary"
+      tags:
+        - "Showcase.Transport"
+      security:
+        -
+          apiKey: []
+      parameters:
+        -
+          name: "Content-MD5"
+          in: "header"
+          required: false
+          schema:
+            type: "string"
+        -
+          name: "Authorization"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+            default: ""
+      requestBody:
+        required: true
+        content:
+          "application/octet-stream":
+            schema:
+              type: "string"
+              format: "binary"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            "application/zip":
+              schema:
+                type: "string"
+                format: "binary"
+        "202":
+          description: "Accepted"
+          content:
+            "application/zip":
+              schema:
+                type: "string"
+                format: "binary"
+  "/showcase/uploads/file":
+    post:
+      operationId: "ShowcaseTransportUploadFile"
+      summary: "UploadFile"
+      tags:
+        - "Showcase.Transport"
+      security:
+        -
+          apiKey: []
+      parameters:
+        -
+          name: "Authorization"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+            default: ""
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: "string"
+              format: "binary"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadReceipt"
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadReceipt"
+  "/showcase/uploads/multipart":
+    post:
+      operationId: "ShowcaseTransportUploadMultipart"
+      summary: "UploadMultipart"
+      tags:
+        - "Showcase.Transport"
+      security:
+        -
+          apiKey: []
+      parameters:
+        -
+          name: "compress"
+          in: "query"
+          required: false
+          schema:
+            type: "boolean"
+            default: false
+        -
+          name: "Authorization"
+          in: "header"
+          required: true
+          schema:
+            type: "string"
+            default: ""
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: "object"
+              properties:
+                file:
+                  type: "string"
+                  format: "binary"
+                metadata:
+                  type: "string"
+                  format: "binary"
+              required:
+                - "file"
+                - "metadata"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadReceipt"
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadReceipt"
+  "/structure":
+    post:
+      operationId: "LocationStructureCreate"
+      summary: "Create"
+      tags:
+        - "Location.Structure"
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Structure"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdStructure"
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdStructure"
+    get:
+      operationId: "LocationStructureList"
+      summary: "List"
+      tags:
+        - "Location.Structure"
+      security:
+        - {}
+      parameters:
+        -
+          name: "text"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+        -
+          name: "type"
+          in: "query"
+          required: true
+          schema:
+            type: "array"
+            items:
+              type: "string"
+              enum:
+                - "plant"
+                - "production_line"
+                - "workstation"
+                - "equipment"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedResultsIdentifiedStructure"
+  "/structure/{structure_id}":
+    delete:
+      operationId: "LocationStructureDelete"
+      summary: "Delete"
+      tags:
+        - "Location.Structure"
+      security:
+        - {}
+      parameters:
+        -
+          name: "structure_id"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            format: "int64"
+      responses:
+        "200":
+          description: "No Error"
+        "204":
+          description: "No Content"
+        "205":
+          description: "Reset Content"
+    get:
+      operationId: "LocationStructureGet"
+      summary: "Get"
+      tags:
+        - "Location.Structure"
+      security:
+        - {}
+      parameters:
+        -
+          name: "structure_id"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            format: "int64"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentifiedStructure"
+    patch:
+      operationId: "LocationStructurePatch"
+      summary: "Patch"
+      tags:
+        - "Location.Structure"
+      security:
+        - {}
+      parameters:
+        -
+          name: "structure_id"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            format: "int64"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchedStructure"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdStructure"
+    put:
+      operationId: "LocationStructureUpdate"
+      summary: "Update"
+      tags:
+        - "Location.Structure"
+      security:
+        - {}
+      parameters:
+        -
+          name: "structure_id"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            format: "int64"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Structure"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdStructure"
+  "/user":
+    post:
+      operationId: "AdminUserCreate"
+      summary: "Create"
+      tags:
+        - "Admin.User"
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/User"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdUser"
+        "201":
+          description: "Created"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdUser"
+    get:
+      operationId: "AdminUserList"
+      summary: "List"
+      tags:
+        - "Admin.User"
+      security:
+        - {}
+      parameters:
+        -
+          name: "text"
+          in: "query"
+          required: false
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedResultsIdentifiedUser"
+  "/user/{user_id}":
+    delete:
+      operationId: "AdminUserDelete"
+      summary: "Delete"
+      tags:
+        - "Admin.User"
+      security:
+        - {}
+      parameters:
+        -
+          name: "user_id"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            format: "int64"
+      responses:
+        "200":
+          description: "No Error"
+        "204":
+          description: "No Content"
+        "205":
+          description: "Reset Content"
+    get:
+      operationId: "AdminUserGet"
+      summary: "Get"
+      tags:
+        - "Admin.User"
+      security:
+        - {}
+      parameters:
+        -
+          name: "user_id"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            format: "int64"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentifiedUser"
+    patch:
+      operationId: "AdminUserPatch"
+      summary: "Patch"
+      tags:
+        - "Admin.User"
+      security:
+        - {}
+      parameters:
+        -
+          name: "user_id"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            format: "int64"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchedUser"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdUser"
+    put:
+      operationId: "AdminUserUpdate"
+      summary: "Update"
+      tags:
+        - "Admin.User"
+      security:
+        - {}
+      parameters:
+        -
+          name: "user_id"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            format: "int64"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/User"
+      responses:
+        "200":
+          description: "No Error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdUser"
+components:
+  schemas:
+    IdObject:
+      type: "object"
+      properties:
+        id:
+          type: "integer"
+          format: "int64"
+      required:
+        - "id"
+    NamedObject:
+      type: "object"
+      properties:
+        id:
+          type: "integer"
+          format: "int64"
+        name:
+          type: "string"
+      required:
+        - "id"
+        - "name"
+    LocalizedNamedObject:
+      type: "object"
+      properties:
+        id:
+          type: "integer"
+          format: "int64"
+        name:
+          $ref: "#/components/schemas/LocalizedDataValue"
+      required:
+        - "id"
+        - "name"
+    LocalizedDataValue:
+      type: "object"
+    StructureType:
+      type: "string"
+      enum:
+        - "plant"
+        - "production_line"
+        - "workstation"
+        - "equipment"
+    AuditStamp:
+      type: "object"
+      properties:
+        created_by:
+          type: "string"
+          format: "uuid"
+        created_at:
+          type: "string"
+          format: "date-time"
+        updated_at:
+          type: "string"
+          format: "date-time"
+      required:
+        - "created_by"
+        - "created_at"
+    User:
+      type: "object"
+      properties:
+        first_name:
+          type: "string"
+        last_name:
+          type: "string"
+        username:
+          type: "string"
+        email:
+          type: "string"
+        phone:
+          type: "string"
+        hire_date:
+          type: "string"
+          format: "date-time"
+        birth_date:
+          type: "string"
+          format: "date-time"
+        picture:
+          type: "string"
+          format: "uri"
+      required:
+        - "first_name"
+        - "last_name"
+        - "username"
+    IdentifiedUser:
+      type: "object"
+      properties:
+        id:
+          type: "integer"
+          format: "int64"
+        first_name:
+          type: "string"
+        last_name:
+          type: "string"
+        username:
+          type: "string"
+        email:
+          type: "string"
+        phone:
+          type: "string"
+        hire_date:
+          type: "string"
+          format: "date-time"
+        birth_date:
+          type: "string"
+          format: "date-time"
+        picture:
+          type: "string"
+          format: "uri"
+        creation_date:
+          type: "string"
+          format: "date-time"
+        last_update_date:
+          type: "string"
+          format: "date-time"
+      required:
+        - "id"
+        - "first_name"
+        - "last_name"
+        - "username"
+        - "creation_date"
+        - "last_update_date"
+    IdUser:
+      type: "object"
+      properties:
+        id:
+          type: "integer"
+          format: "int64"
+      required:
+        - "id"
+    PatchedUser:
+      type: "object"
+      properties:
+        first_name:
+          $ref: "#/components/schemas/PatchableValueValue"
+        last_name:
+          $ref: "#/components/schemas/PatchableValueValue"
+        username:
+          $ref: "#/components/schemas/PatchableValueValue"
+        email:
+          $ref: "#/components/schemas/PatchableValueValue"
+        phone:
+          $ref: "#/components/schemas/PatchableValueValue"
+        hire_date:
+          $ref: "#/components/schemas/PatchableValueValue"
+        birth_date:
+          $ref: "#/components/schemas/PatchableValueValue"
+        picture:
+          $ref: "#/components/schemas/PatchableValueValue"
+      required:
+        - "first_name"
+        - "last_name"
+        - "username"
+    PatchableValueValue:
+      type: "object"
+    PagedResultsIdentifiedUser:
+      type: "object"
+    Role:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+      required:
+        - "name"
+    IdentifiedRole:
+      type: "object"
+      properties:
+        id:
+          type: "integer"
+          format: "int64"
+        name:
+          type: "string"
+        creation_date:
+          type: "string"
+          format: "date-time"
+        last_update_date:
+          type: "string"
+          format: "date-time"
+      required:
+        - "id"
+        - "name"
+        - "creation_date"
+        - "last_update_date"
+    IdRole:
+      type: "object"
+      properties:
+        id:
+          type: "integer"
+          format: "int64"
+      required:
+        - "id"
+    PatchedRole:
+      type: "object"
+      properties:
+        name:
+          $ref: "#/components/schemas/PatchableValueValue"
+      required:
+        - "name"
+    PagedResultsIdentifiedRole:
+      type: "object"
+    Group:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+      required:
+        - "name"
+    IdentifiedGroup:
+      type: "object"
+      properties:
+        id:
+          type: "integer"
+          format: "int64"
+        name:
+          type: "string"
+        creation_date:
+          type: "string"
+          format: "date-time"
+        last_update_date:
+          type: "string"
+          format: "date-time"
+      required:
+        - "id"
+        - "name"
+        - "creation_date"
+        - "last_update_date"
+    IdGroup:
+      type: "object"
+      properties:
+        id:
+          type: "integer"
+          format: "int64"
+      required:
+        - "id"
+    PatchedGroup:
+      type: "object"
+      properties:
+        name:
+          $ref: "#/components/schemas/PatchableValueValue"
+      required:
+        - "name"
+    PagedResultsIdentifiedGroup:
+      type: "object"
+    Structure:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+        type:
+          $ref: "#/components/schemas/StructureType"
+      required:
+        - "name"
+        - "type"
+    IdentifiedStructure:
+      type: "object"
+      properties:
+        id:
+          type: "integer"
+          format: "int64"
+        name:
+          type: "string"
+        type:
+          $ref: "#/components/schemas/StructureType"
+        creation_date:
+          type: "string"
+          format: "date-time"
+        last_update_date:
+          type: "string"
+          format: "date-time"
+      required:
+        - "id"
+        - "name"
+        - "type"
+        - "creation_date"
+        - "last_update_date"
+    IdStructure:
+      type: "object"
+      properties:
+        id:
+          type: "integer"
+          format: "int64"
+      required:
+        - "id"
+    PatchedStructure:
+      type: "object"
+      properties:
+        name:
+          $ref: "#/components/schemas/PatchableValueValue"
+        type:
+          $ref: "#/components/schemas/PatchableValueStructureType"
+      required:
+        - "name"
+        - "type"
+    PatchableValueStructureType:
+      type: "object"
+    PagedResultsIdentifiedStructure:
+      type: "object"
+    SampleVisibility:
+      type: "string"
+      enum:
+        - "public"
+        - "internal"
+        - "private"
+      default: "Public"
+      x-supports-unknown-values: true
+    PrimitiveMatrix:
+      type: "object"
+      properties:
+        uuid:
+          type: "string"
+          format: "uuid"
+        title:
+          type: "string"
+          default: "Untitled"
+        count:
+          type: "integer"
+          format: "int64"
+          default: 1
+        large_count:
+          type: "integer"
+          format: "int64"
+          default: 1
+        medium_count:
+          type: "integer"
+          format: "int32"
+          default: "1"
+        small_count:
+          type: "integer"
+          default: "1"
+        tiny_count:
+          type: "integer"
+          default: "1"
+        unsigned_count:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+          default: "1"
+        unsigned_large_count:
+          type: "integer"
+          format: "int64"
+          minimum: 0
+          default: 1
+        unsigned_medium_count:
+          type: "integer"
+          format: "int32"
+          minimum: 0
+          default: "1"
+        unsigned_small_count:
+          type: "integer"
+          minimum: 0
+          default: "1"
+        unsigned_tiny_count:
+          type: "integer"
+          minimum: 0
+          default: "1"
+        ratio:
+          type: "number"
+          format: "double"
+          default: 0.5
+        enabled:
+          type: "boolean"
+          default: true
+        created_at:
+          type: "string"
+          format: "date-time"
+        business_date:
+          type: "string"
+          format: "date"
+        business_time:
+          type: "string"
+          format: "time"
+        callback_url:
+          type: "string"
+          format: "uri"
+        payload:
+          type: "string"
+          format: "binary"
+        metadata:
+          type: "object"
+          additionalProperties:
+            type: "string"
+        aliases:
+          type: "array"
+          items:
+            type: "string"
+        steps:
+          type: "array"
+          items:
+            type: "integer"
+            format: "int64"
+        visibility:
+          $ref: "#/components/schemas/SampleVisibility"
+        score:
+          $ref: "#/components/schemas/SampleScore"
+        audit:
+          type: "object"
+          properties:
+            created_by:
+              type: "string"
+              format: "uuid"
+            created_at:
+              type: "string"
+              format: "date-time"
+            updated_at:
+              type: "string"
+              format: "date-time"
+          required:
+            - "created_by"
+            - "created_at"
+        related:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/NamedObject"
+        external_window:
+          $ref: "#/components/schemas/DateInterval"
+        archived:
+          type: "boolean"
+          default: false
+      required:
+        - "uuid"
+        - "title"
+        - "count"
+        - "large_count"
+        - "medium_count"
+        - "small_count"
+        - "tiny_count"
+        - "unsigned_count"
+        - "unsigned_large_count"
+        - "unsigned_medium_count"
+        - "unsigned_small_count"
+        - "unsigned_tiny_count"
+        - "ratio"
+        - "enabled"
+        - "created_at"
+        - "business_date"
+        - "business_time"
+        - "payload"
+        - "metadata"
+        - "aliases"
+        - "steps"
+        - "visibility"
+        - "score"
+        - "audit"
+        - "related"
+        - "external_window"
+        - "archived"
+    SampleScore:
+      type: "integer"
+      enum:
+        - 10
+        - 50
+        - 100
+      default: 50
+    DateInterval:
+      type: "object"
+    EmailNotification:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        subject:
+          type: "string"
+        body:
+          type: "string"
+        recipients:
+          type: "array"
+          items:
+            type: "string"
+      required:
+        - "id"
+        - "subject"
+        - "body"
+        - "recipients"
+    PushNotification:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        title:
+          type: "string"
+        body:
+          type: "string"
+        custom_data:
+          type: "object"
+          additionalProperties:
+            type: "string"
+      required:
+        - "id"
+        - "title"
+        - "body"
+        - "custom_data"
+    NotificationEnvelope:
+      discriminator:
+        propertyName: "channel"
+      oneOf:
+        -
+          type: "object"
+          properties:
+            channel:
+              type: "string"
+              enum:
+                - "email"
+            payload:
+              $ref: "#/components/schemas/EmailNotification"
+            visibility:
+              $ref: "#/components/schemas/SampleVisibility"
+            sent_at:
+              type: "string"
+              format: "date-time"
+          required:
+            - "channel"
+            - "payload"
+            - "visibility"
+        -
+          type: "object"
+          properties:
+            channel:
+              type: "string"
+              enum:
+                - "push"
+            payload:
+              $ref: "#/components/schemas/PushNotification"
+            visibility:
+              $ref: "#/components/schemas/SampleVisibility"
+            sent_at:
+              type: "string"
+              format: "date-time"
+          required:
+            - "channel"
+            - "payload"
+            - "visibility"
+      x-supports-unknown-values: true
+    PagedResultsPrimitiveMatrix:
+      type: "object"
+    UploadReceipt:
+      type: "object"
+      properties:
+        upload_id:
+          type: "string"
+          format: "uuid"
+        bytes:
+          type: "integer"
+          format: "int64"
+        state:
+          type: "string"
+          enum:
+            - "queued"
+            - "stored"
+            - "scanned"
+          default: "Queued"
+      required:
+        - "upload_id"
+        - "bytes"
+        - "state"
+    UploadState:
+      type: "string"
+      enum:
+        - "queued"
+        - "stored"
+        - "scanned"
+      default: "Queued"
+    DeleteReceiptRequest:
+      type: "object"
+      properties:
+        upload_ids:
+          type: "array"
+          items:
+            type: "string"
+            format: "uuid"
+        reason:
+          type: "string"
+      required:
+        - "upload_ids"
+    TenantStatus:
+      type: "string"
+      enum:
+        - "trial"
+        - "active"
+        - "suspended"
+    Project:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+        status:
+          $ref: "#/components/schemas/TenantStatus"
+        owners:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/NamedObject"
+        labels:
+          type: "object"
+          additionalProperties:
+            type: "string"
+      required:
+        - "name"
+        - "status"
+        - "owners"
+        - "labels"
+    IdentifiedProject:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        name:
+          type: "string"
+        status:
+          $ref: "#/components/schemas/TenantStatus"
+        owners:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/NamedObject"
+        labels:
+          type: "object"
+          additionalProperties:
+            type: "string"
+        creation_date:
+          type: "string"
+          format: "date-time"
+        last_update_date:
+          type: "string"
+          format: "date-time"
+      required:
+        - "id"
+        - "name"
+        - "status"
+        - "owners"
+        - "labels"
+        - "creation_date"
+        - "last_update_date"
+    IdProject:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+      required:
+        - "id"
+    PatchedProject:
+      type: "object"
+      properties:
+        name:
+          $ref: "#/components/schemas/PatchableValueValue"
+        status:
+          $ref: "#/components/schemas/PatchableValueTenantStatus"
+        owners:
+          $ref: "#/components/schemas/PatchableValueValue"
+        labels:
+          $ref: "#/components/schemas/PatchableValueValue"
+      required:
+        - "name"
+        - "status"
+        - "owners"
+        - "labels"
+    PatchableValueTenantStatus:
+      type: "object"
+    Task:
+      type: "object"
+      properties:
+        title:
+          type: "string"
+        details:
+          type: "string"
+        due_at:
+          type: "string"
+          format: "date-time"
+        done:
+          type: "boolean"
+          default: false
+      required:
+        - "title"
+        - "done"
+    IdentifiedTask:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        title:
+          type: "string"
+        details:
+          type: "string"
+        due_at:
+          type: "string"
+          format: "date-time"
+        done:
+          type: "boolean"
+          default: false
+        creation_date:
+          type: "string"
+          format: "date-time"
+        last_update_date:
+          type: "string"
+          format: "date-time"
+      required:
+        - "id"
+        - "title"
+        - "done"
+        - "creation_date"
+        - "last_update_date"
+    IdTask:
+      type: "object"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+      required:
+        - "id"
+    PatchedTask:
+      type: "object"
+      properties:
+        title:
+          $ref: "#/components/schemas/PatchableValueValue"
+        details:
+          $ref: "#/components/schemas/PatchableValueValue"
+        due_at:
+          $ref: "#/components/schemas/PatchableValueValue"
+        done:
+          $ref: "#/components/schemas/PatchableValueValue"
+      required:
+        - "title"
+        - "done"
+    PagedResultsIdentifiedTask:
+      type: "object"
+    CompleteTaskRequest:
+      type: "object"
+      properties:
+        completed_at:
+          type: "string"
+          format: "date-time"
+      required:
+        - "completed_at"
+  securitySchemes:
+    apiKey:
+      type: "apiKey"
+      in: "header"
+      name: "Authorization"
