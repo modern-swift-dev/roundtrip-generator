@@ -1072,7 +1072,7 @@ import Testing
         #expect(runtime.contents.contains("public static func requiredDateOnly(_ value: String?, name: String) throws -> Date"))
         #expect(runtime.contents.contains("private static func parseDateTime(_ value: String) -> Date?"))
         #expect(runtime.contents.contains("private final class DateFormatters: @unchecked Sendable"))
-        #expect(runtime.contents.components(separatedBy: "defer { lock.unlock() }").count == 3)
+        #expect(runtime.contents.filter { !$0.isWhitespace }.components(separatedBy: "defer{lock.unlock()}").count == 3)
         #expect(!runtime.contents.contains("makeDateOnlyFormatter()"))
         #expect(runtime.contents.contains("return dateTimeFormatter.date(from: value) ?? fractionalDateTimeFormatter.date(from: value)"))
         #expect(runtime.contents.contains("DateFormatter"))

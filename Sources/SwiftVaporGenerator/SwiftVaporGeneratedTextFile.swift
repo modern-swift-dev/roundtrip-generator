@@ -1,4 +1,6 @@
 import Foundation
+import SwiftBasicFormat
+import SwiftSyntax
 
 public enum SwiftVaporGeneratedTextFileError: Error, Equatable, LocalizedError {
     case invalidRelativePath(String)
@@ -24,6 +26,11 @@ public struct SwiftVaporGeneratedTextFile: Sendable, Equatable {
     public init(relativePath: String, contents: String) {
         self.relativePath = relativePath
         self.contents = contents.swiftVaporGeneratedFileNormalized
+    }
+
+    init(relativePath: String, syntax: SourceFileSyntax) {
+        precondition(!syntax.hasError, "Invalid generated Swift syntax in \(relativePath)")
+        self.init(relativePath: relativePath, contents: syntax.formatted().description)
     }
 
     public func write(to directoryURL: URL) throws {

@@ -1,8 +1,8 @@
 import Foundation
 import GeneratorModels
 
-enum SwiftGeneratedSyntax {
-    static func parse<T>(_ context: String, _ build: () throws -> T) -> T {
+package enum SwiftGeneratedSyntax {
+    package static func parse<T>(_ context: String, _ build: () throws -> T) -> T {
         do {
             return try parseThrowing(context, build)
         } catch {

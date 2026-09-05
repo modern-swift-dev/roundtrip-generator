@@ -1,6 +1,9 @@
+import SwiftApiGenerator
 import Foundation
 import GeneratorBuilder
 import GeneratorModels
+import SwiftSyntax
+import SwiftSyntaxBuilder
 
 struct SwiftVaporOperationEmitter {
     let module: ApiModule
@@ -21,7 +24,7 @@ struct SwiftVaporOperationEmitter {
         routableOperations.map { operation in
             SwiftVaporGeneratedTextFile(
                 relativePath: "\(sourceRoot)/Generated/Requests/\(operation.swiftVaporRequestTypeName(moduleName: module.name, definitionName: definition.name)).generated.swift",
-                contents: requestFileContents(operation)
+                syntax: requestFileSyntax(operation)
             )
         }
     }
@@ -29,123 +32,119 @@ struct SwiftVaporOperationEmitter {
     func serviceFile() -> SwiftVaporGeneratedTextFile {
         SwiftVaporGeneratedTextFile(
             relativePath: "\(sourceRoot)/Generated/Services/\(serviceName).generated.swift",
-            contents: serviceFileContents()
+            syntax: serviceFileSyntax()
         )
     }
 
     func controllerFile() -> SwiftVaporGeneratedTextFile {
         SwiftVaporGeneratedTextFile(
             relativePath: "\(sourceRoot)/Generated/Controllers/\(controllerName).generated.swift",
-            contents: controllerFileContents()
+            syntax: controllerFileSyntax()
         )
     }
 
-    private func requestFileContents(_ operation: ApiOperation) -> String {
-        let imports = importLines(for: [operation])
+    private func requestFileSyntax(_ operation: ApiOperation) -> SourceFileSyntax {
         let requestName = operation.swiftVaporRequestTypeName(moduleName: module.name, definitionName: definition.name)
-        let multipartDeclaration = multipartBodyDeclaration(operation)
         let properties = requestProperties(operation)
-        let propertyDeclarations = properties.map { property in
-            "    public var \(property.name): \(property.type)"
-        }
-        .joined(separator: "\n")
-        let initParameters = properties.map { property in
-            "\(property.name): \(property.type)"
-        }
-        .joined(separator: ", ")
-        let assignments = properties.map { property in
-            "        self.\(property.name) = \(property.name)"
-        }
-        .joined(separator: "\n")
-
-        return """
-        // Generated code. Do not edit.
-        \(imports)
-
-        \(multipartDeclaration)
-        public struct \(requestName)\(requestConformanceClause(operation)) {
-        \(propertyDeclarations)
-
-            public init(\(initParameters)) {
-        \(assignments)
+        let request = SwiftGeneratedSyntax.parse("request \(requestName)") {
+            try StructDeclSyntax("public struct \(raw: requestName)\(raw: requestConformanceClause(operation))") {
+                for property in properties {
+                    try VariableDeclSyntax("public var \(raw: property.name): \(raw: property.type)")
+                }
+                initializer(properties: properties)
             }
         }
-        """
+        return SwiftVaporSyntax.sourceFile(
+            imports: importLines(for: [operation]),
+            declarations: multipartBodyDeclarations(operation) + [DeclSyntax(request)]
+        )
     }
 
-    private func serviceFileContents() -> String {
-        let imports = importLines(for: routableOperations)
-        let methods = routableOperations.map { operation in
-            "    func \(operation.swiftVaporOperationName)(_ request: \(operation.swiftVaporRequestTypeName(moduleName: module.name, definitionName: definition.name))) async throws -> \(responseType(operation.response))"
+    private func initializer(properties: [(name: String, type: String)], defaultValue: String? = nil) -> InitializerDeclSyntax {
+        let parameters = properties.map { property in
+            "\(property.name): \(property.type)\(defaultValue.map { " = \($0)" } ?? "")"
+        }.joined(separator: ", ")
+        let assignments = properties.map { "self.\($0.name) = \($0.name)" }.joined(separator: "\n")
+        return SwiftGeneratedSyntax.parse("request initializer") {
+            try InitializerDeclSyntax(
+                """
+                public init(\(raw: parameters)) {
+                \(raw: assignments)
+                }
+                """
+            )
         }
-        .joined(separator: "\n")
-
-        let notImplementedMethods = routableOperations.map { operation in
-            let requestName = operation.swiftVaporRequestTypeName(moduleName: module.name, definitionName: definition.name)
-            return """
-            public func \(operation.swiftVaporOperationName)(_: \(requestName)) async throws -> \(responseType(operation.response)) {
-                throw Abort(.notImplemented)
-            }
-            """
-        }
-        .joined(separator: "\n\n")
-
-        return """
-        // Generated code. Do not edit.
-        \(imports)
-
-        public protocol \(serviceName): Sendable {
-        \(methods)
-        }
-
-        public struct NotImplemented\(serviceName): \(serviceName) {
-            public init() {}
-
-        \(notImplementedMethods)
-        }
-        """
     }
 
-    private func controllerFileContents() -> String {
-        let imports = importLines(for: routableOperations)
-        let routeMethods = routableOperations.map(routeMethodDeclaration)
-            .joined(separator: "\n\n")
-
-        let routeRegistrations = definition.operations.compactMap(routeRegistration)
-            .joined(separator: "\n")
-
-        let skippedRoutes = definition.operations.compactMap { operation -> String? in
-            skippedRouteComment(operation)
-        }
-        .joined(separator: "\n")
-
-        return """
-        // Generated code. Do not edit.
-        \(imports)
-
-        public struct \(controllerName): Sendable {
-            private let service: any \(serviceName)
-            private let security: any GeneratedSecurityMiddleware
-
-            public init(service: any \(serviceName), security: any GeneratedSecurityMiddleware) {
-                self.service = service
-                self.security = security
+    private func serviceFileSyntax() -> SourceFileSyntax {
+        let service = SwiftGeneratedSyntax.parse("service \(serviceName)") {
+            try ProtocolDeclSyntax("public protocol \(raw: serviceName): Sendable") {
+                for operation in routableOperations {
+                    try FunctionDeclSyntax(
+                        "func \(raw: operation.swiftVaporOperationName)(_ request: \(raw: operation.swiftVaporRequestTypeName(moduleName: module.name, definitionName: definition.name))) async throws -> \(raw: responseType(operation.response))"
+                    )
+                }
             }
-
-            public func register(routes: RoutesBuilder) throws {
-        \(routeRegistrations)\(routeRegistrations.isEmpty || skippedRoutes.isEmpty ? "" : "\n")\(skippedRoutes)
-            }
-
-        \(routeMethods)
         }
-        """
+        let notImplemented = SwiftGeneratedSyntax.parse("not implemented service \(serviceName)") {
+            try StructDeclSyntax("public struct NotImplemented\(raw: serviceName): \(raw: serviceName)") {
+                try InitializerDeclSyntax("public init() {}")
+                for operation in routableOperations {
+                    try FunctionDeclSyntax(
+                        """
+                        public func \(raw: operation.swiftVaporOperationName)(_: \(raw: operation.swiftVaporRequestTypeName(moduleName: module.name, definitionName: definition.name))) async throws -> \(raw: responseType(operation.response)) {
+                            throw Abort(.notImplemented)
+                        }
+                        """
+                    )
+                }
+            }
+        }
+        return SwiftVaporSyntax.sourceFile(
+            imports: importLines(for: routableOperations),
+            declarations: [DeclSyntax(service), DeclSyntax(notImplemented)]
+        )
+    }
+
+    private func controllerFileSyntax() -> SourceFileSyntax {
+        let routeRegistrations = definition.operations.compactMap(routeRegistration).joined(separator: "\n")
+        let skippedRoutes = definition.operations.compactMap(skippedRouteComment).joined(separator: "\n")
+        let controller = SwiftGeneratedSyntax.parse("controller \(controllerName)") {
+            try StructDeclSyntax("public struct \(raw: controllerName): Sendable") {
+                try VariableDeclSyntax("private let service: any \(raw: serviceName)")
+                try VariableDeclSyntax("private let security: any GeneratedSecurityMiddleware")
+                try InitializerDeclSyntax(
+                    """
+                    public init(service: any \(raw: serviceName), security: any GeneratedSecurityMiddleware) {
+                        self.service = service
+                        self.security = security
+                    }
+                    """
+                )
+                try FunctionDeclSyntax(
+                    """
+                    public func register(routes: RoutesBuilder) throws {
+                    \(raw: routeRegistrations)
+                    \(raw: skippedRoutes)
+                    }
+                    """
+                )
+                for operation in routableOperations {
+                    routeMethodDeclaration(operation)
+                }
+            }
+        }
+        return SwiftVaporSyntax.sourceFile(
+            imports: importLines(for: routableOperations),
+            declarations: [DeclSyntax(controller)]
+        )
     }
 
     private var routableOperations: [ApiOperation] {
         definition.operations.filter(\.isSwiftVaporRoutable)
     }
 
-    private func importLines(for operations: [ApiOperation]) -> String {
+    private func importLines(for operations: [ApiOperation]) -> [String] {
         let baseImports = [
             ApiImport(stringLiteral: "Foundation"),
             ApiImport(stringLiteral: "Vapor")
@@ -154,7 +153,7 @@ struct SwiftVaporOperationEmitter {
         let extraImports = Set(packageImports + operations.flatMap(\.swiftVaporImports))
             .filter { !baseImportNames.contains($0.name) }
             .sorted()
-        return (baseImports + extraImports).map(\.swiftVaporImportLine).joined(separator: "\n")
+        return (baseImports + extraImports).map(\.swiftVaporImportLine)
     }
 
     private func requestConformanceClause(_ operation: ApiOperation) -> String {
@@ -169,7 +168,7 @@ struct SwiftVaporOperationEmitter {
         return "        routes.on(.\(operation.method.httpMethod)\(pathArguments), use: \(operation.swiftVaporOperationName))"
     }
 
-    private func routeMethodDeclaration(_ operation: ApiOperation) -> String {
+    private func routeMethodDeclaration(_ operation: ApiOperation) -> FunctionDeclSyntax {
         let properties = requestProperties(operation)
         let propertyBindings = localBindings(for: properties.map(\.name))
         let paramLines = zip(operation.expandedParameters, propertyBindings.prefix(operation.expandedParameters.count))
@@ -188,17 +187,24 @@ struct SwiftVaporOperationEmitter {
         let securityLines = securityLines(operation)
         let responseLine = responseEncodeLine(operation)
 
-        return ([
-            "    private func \(operation.swiftVaporOperationName)(req: Request) async throws -> Response {",
+        let body = ([
             "        let securityRequest = GeneratedSecurityRequest(request: req, operationID: \(operationID(operation).swiftVaporStringLiteral))",
             securityLines
         ] + paramLines + bodyLines + [
             "        let serviceRequest = \(serviceRequestSource)",
             "        let serviceResponse = try await service.\(operation.swiftVaporOperationName)(serviceRequest)",
-            "        return \(responseLine)",
-            "    }"
+            "        return \(responseLine)"
         ])
         .joined(separator: "\n")
+        return SwiftGeneratedSyntax.parse("route method \(operation.swiftVaporOperationName)") {
+            try FunctionDeclSyntax(
+                """
+                private func \(raw: operation.swiftVaporOperationName)(req: Request) async throws -> Response {
+                \(raw: body)
+                }
+                """
+            )
+        }
     }
 
     private func parameterDecodeLine(_ parameter: ApiParameter) -> String {
@@ -243,56 +249,40 @@ struct SwiftVaporOperationEmitter {
         }
     }
 
-    private func multipartBodyDeclaration(_ operation: ApiOperation) -> String {
+    private func multipartBodyDeclarations(_ operation: ApiOperation) -> [DeclSyntax] {
         guard case let .multiPart(parts) = operation.request else {
-            return ""
+            return []
         }
 
         let multipartType = operation.swiftVaporMultipartTypeName(moduleName: module.name, definitionName: definition.name)
-        let decodeType = "\(multipartType)Decode"
-        let partProperties = parts.map { part in
-            "    public var \(part.swiftPropertyName): GeneratedMultipartPart?"
-        }
-        .joined(separator: "\n")
-        let decodeProperties = parts.map { part in
-            "    public var \(part.swiftPropertyName): File?"
-        }
-        .joined(separator: "\n")
-        let initParameters = parts.map { part in
-            "\(part.swiftPropertyName): GeneratedMultipartPart? = nil"
-        }
-        .joined(separator: ", ")
-        let assignments = parts.map { part in
-            "        self.\(part.swiftPropertyName) = \(part.swiftPropertyName)"
-        }
-        .joined(separator: "\n")
-        let codingKeys = parts.map { part -> String in
-            let propertyName = part.swiftPropertyName
-            if propertyName == part {
-                return "        case \(propertyName)"
-            }
-            return "        case \(propertyName) = \(part.swiftVaporStringLiteral)"
-        }
-        .joined(separator: "\n")
-
-        return """
-        public struct \(multipartType): Sendable {
-        \(partProperties)
-
-            public init(\(initParameters)) {
-        \(assignments)
+        let multipart = SwiftGeneratedSyntax.parse("multipart body \(multipartType)") {
+            try StructDeclSyntax("public struct \(raw: multipartType): Sendable") {
+                for part in parts {
+                    try VariableDeclSyntax("public var \(raw: part.swiftPropertyName): GeneratedMultipartPart?")
+                }
+                initializer(
+                    properties: parts.map { (name: $0.swiftPropertyName, type: "GeneratedMultipartPart?") },
+                    defaultValue: "nil"
+                )
             }
         }
-
-        struct \(decodeType): Content {
-        \(decodeProperties)
-
-            enum CodingKeys: String, CodingKey {
-        \(codingKeys)
+        let decode = SwiftGeneratedSyntax.parse("multipart decoder \(multipartType)") {
+            try StructDeclSyntax("struct \(raw: multipartType)Decode: Content") {
+                for part in parts {
+                    try VariableDeclSyntax("public var \(raw: part.swiftPropertyName): File?")
+                }
+                try EnumDeclSyntax("enum CodingKeys: String, CodingKey") {
+                    for part in parts {
+                        if part.swiftPropertyName == part {
+                            try EnumCaseDeclSyntax("case \(raw: part.swiftPropertyName)")
+                        } else {
+                            try EnumCaseDeclSyntax("case \(raw: part.swiftPropertyName) = \(literal: part)")
+                        }
+                    }
+                }
             }
         }
-
-        """
+        return [DeclSyntax(multipart), DeclSyntax(decode)]
     }
 
     private func requestProperties(_ operation: ApiOperation) -> [(name: String, type: String)] {

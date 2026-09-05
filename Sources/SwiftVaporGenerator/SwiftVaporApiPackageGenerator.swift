@@ -2,6 +2,8 @@ import Foundation
 import GeneratorBuilder
 import GeneratorModels
 import SwiftApiGenerator
+import SwiftSyntax
+import SwiftSyntaxBuilder
 
 public enum SwiftVaporGeneratorError: Error, LocalizedError, Equatable {
     case invalidAppName(String)
@@ -241,57 +243,70 @@ public struct SwiftVaporApiPackageGenerator {
             ".product(name: \"Vapor\", package: \"vapor\")"
         ] + options.additionalTargetDependencies)
             .swiftVaporManifestLines(indentedBy: 16)
-        return SwiftVaporGeneratedTextFile(relativePath: "Package.swift", contents: """
-        // swift-tools-version:\(options.swiftToolsVersion)
-        // Generated code. Do not edit.
-        import PackageDescription
-
-        let package = Package(
-            name: "\(options.appName)",
-            platforms: [
-                .macOS(.v10_15)
-            ],
-            products: [
-                .library(name: "\(options.moduleName)", targets: ["\(options.moduleName)"])\(executableProduct)
-            ],
-            dependencies: [
-        \(packageDependencies)
-            ],
-            targets: [
-                .target(
-                    name: "\(options.moduleName)",
+        let declaration = SwiftGeneratedSyntax.parse("package manifest") {
+            try VariableDeclSyntax(
+                """
+                let package = Package(
+                    name: \(literal: options.appName),
+                    platforms: [
+                        .macOS(.v10_15)
+                    ],
+                    products: [
+                        .library(name: \(literal: options.moduleName), targets: [\(literal: options.moduleName)])\(raw: executableProduct)
+                    ],
                     dependencies: [
-        \(targetDependencies)
+                \(raw: packageDependencies)
+                    ],
+                    targets: [
+                        .target(
+                            name: \(literal: options.moduleName),
+                            dependencies: [
+                \(raw: targetDependencies)
+                            ]
+                        )\(raw: executableTarget)
                     ]
-                )\(executableTarget)
-            ]
-        )
-        """)
+                )
+                """
+            )
+        }
+        let syntax = SwiftVaporSyntax.sourceFile(
+            imports: ["import PackageDescription"],
+            declarations: [DeclSyntax(declaration)]
+        ).with(\.leadingTrivia,
+               .lineComment("// swift-tools-version:\(options.swiftToolsVersion)") + .newline
+                   + .lineComment(SwiftVaporGeneratedTextFile.managedHeader) + .newline)
+        return SwiftVaporGeneratedTextFile(relativePath: "Package.swift", syntax: syntax)
     }
 
     private func runFile() -> SwiftVaporGeneratedTextFile {
-        SwiftVaporGeneratedTextFile(relativePath: "Sources/Run/main.swift", contents: """
-        // Generated code. Do not edit.
-        import \(options.moduleName)
-        import Vapor
-
-        @main
-        enum Entrypoint {
-            static func main() async throws {
-                var env = try Environment.detect()
-                try LoggingSystem.bootstrap(from: &env)
-                let app = try await Application.make(env)
-                do {
-                    try await configure(app)
-                    try await app.execute()
-                } catch {
-                    try await app.asyncShutdown()
-                    throw error
-                }
-                try await app.asyncShutdown()
+        let entrypoint = SwiftGeneratedSyntax.parse("entrypoint") {
+            try EnumDeclSyntax("@main enum Entrypoint") {
+                try FunctionDeclSyntax(
+                    """
+                    static func main() async throws {
+                        var env = try Environment.detect()
+                        try LoggingSystem.bootstrap(from: &env)
+                        let app = try await Application.make(env)
+                        do {
+                            try await configure(app)
+                            try await app.execute()
+                        } catch {
+                            try await app.asyncShutdown()
+                            throw error
+                        }
+                        try await app.asyncShutdown()
+                    }
+                    """
+                )
             }
         }
-        """)
+        return SwiftVaporGeneratedTextFile(
+            relativePath: "Sources/Run/main.swift",
+            syntax: SwiftVaporSyntax.sourceFile(
+                imports: ["import \(options.moduleName)", "import Vapor"],
+                declarations: [DeclSyntax(entrypoint)]
+            )
+        )
     }
 
     private func dockerfile() -> SwiftVaporGeneratedTextFile {
@@ -317,81 +332,94 @@ public struct SwiftVaporApiPackageGenerator {
     }
 
     private func configureFile() -> SwiftVaporGeneratedTextFile {
-        SwiftVaporGeneratedTextFile(relativePath: "\(sourceRoot)/configure.swift", contents: """
-        // Generated code. Do not edit.
-        import Vapor
-
-        public func configure(
-            _ app: Application,
-            services: GeneratedApiServices = .notImplemented,
-            security: any GeneratedSecurityMiddleware = AllowAllGeneratedSecurityMiddleware()
-        ) async throws {
-            try routes(app, services: services, security: security)
+        let configure = SwiftGeneratedSyntax.parse("configure") {
+            try FunctionDeclSyntax(
+                """
+                public func configure(
+                    _ app: Application,
+                    services: GeneratedApiServices = .notImplemented,
+                    security: any GeneratedSecurityMiddleware = AllowAllGeneratedSecurityMiddleware()
+                ) async throws {
+                    try routes(app, services: services, security: security)
+                }
+                """
+            )
         }
-        """)
+        return SwiftVaporGeneratedTextFile(
+            relativePath: "\(sourceRoot)/configure.swift",
+            syntax: SwiftVaporSyntax.sourceFile(imports: ["import Vapor"], declarations: [DeclSyntax(configure)])
+        )
     }
 
     private func routesFile(registry _: SwiftVaporTypeRegistry) -> SwiftVaporGeneratedTextFile {
-        let serviceProperties = serviceDefinitions.map { item in
-            "    public let \(item.propertyName): any \(item.serviceTypeName)"
-        }
-        .joined(separator: "\n")
         let initParameters = serviceDefinitions.map { item in
             "\(item.propertyName): any \(item.serviceTypeName)"
-        }
-        .joined(separator: ", ")
+        }.joined(separator: ", ")
         let initAssignments = serviceDefinitions.map { item in
-            "        self.\(item.propertyName) = \(item.propertyName)"
-        }
-        .joined(separator: "\n")
+            "self.\(item.propertyName) = \(item.propertyName)"
+        }.joined(separator: "\n")
         let defaultArguments = serviceDefinitions.map { item in
-            "            \(item.propertyName): NotImplemented\(item.serviceTypeName)()"
-        }
-        .joined(separator: ",\n")
+            "\(item.propertyName): NotImplemented\(item.serviceTypeName)()"
+        }.joined(separator: ",\n")
         let controllerRegistrations = serviceDefinitions.map { item in
             """
-                try \(item.controllerTypeName)(
-                    service: services.\(item.propertyName),
-                    security: security
-                ).register(routes: routes)
+            try \(item.controllerTypeName)(
+                service: services.\(item.propertyName),
+                security: security
+            ).register(routes: routes)
             """
-        }
-        .joined(separator: "\n")
+        }.joined(separator: "\n")
 
-        return SwiftVaporGeneratedTextFile(relativePath: "\(sourceRoot)/routes.generated.swift", contents: """
-        // Generated code. Do not edit.
-        import Vapor
-
-        public struct GeneratedApiServices: Sendable {
-        \(serviceProperties)
-
-            public init(\(initParameters)) {
-        \(initAssignments)
-            }
-
-            public static var notImplemented: GeneratedApiServices {
-                GeneratedApiServices(
-        \(defaultArguments)
+        let declarations = SwiftGeneratedSyntax.parse("routes") {
+            let services = try StructDeclSyntax("public struct GeneratedApiServices: Sendable") {
+                for item in serviceDefinitions {
+                    try VariableDeclSyntax("public let \(raw: item.propertyName): any \(raw: item.serviceTypeName)")
+                }
+                try InitializerDeclSyntax(
+                    """
+                    public init(\(raw: initParameters)) {
+                        \(raw: initAssignments)
+                    }
+                    """
+                )
+                try VariableDeclSyntax(
+                    """
+                    public static var notImplemented: GeneratedApiServices {
+                        GeneratedApiServices(
+                            \(raw: defaultArguments)
+                        )
+                    }
+                    """
                 )
             }
+            let appRoutes = try FunctionDeclSyntax(
+                """
+                public func routes(
+                    _ app: Application,
+                    services: GeneratedApiServices = .notImplemented,
+                    security: any GeneratedSecurityMiddleware = AllowAllGeneratedSecurityMiddleware()
+                ) throws {
+                    try routes(app.routes, services: services, security: security)
+                }
+                """
+            )
+            let builderRoutes = try FunctionDeclSyntax(
+                """
+                public func routes(
+                    _ routes: RoutesBuilder,
+                    services: GeneratedApiServices = .notImplemented,
+                    security: any GeneratedSecurityMiddleware = AllowAllGeneratedSecurityMiddleware()
+                ) throws
+                """
+            ) {
+                CodeBlockItemListSyntax(stringLiteral: controllerRegistrations)
+            }
+            return [DeclSyntax(services), DeclSyntax(appRoutes), DeclSyntax(builderRoutes)]
         }
-
-        public func routes(
-            _ app: Application,
-            services: GeneratedApiServices = .notImplemented,
-            security: any GeneratedSecurityMiddleware = AllowAllGeneratedSecurityMiddleware()
-        ) throws {
-            try routes(app.routes, services: services, security: security)
-        }
-
-        public func routes(
-            _ routes: RoutesBuilder,
-            services: GeneratedApiServices = .notImplemented,
-            security: any GeneratedSecurityMiddleware = AllowAllGeneratedSecurityMiddleware()
-        ) throws {
-        \(controllerRegistrations)
-        }
-        """)
+        return SwiftVaporGeneratedTextFile(
+            relativePath: "\(sourceRoot)/routes.generated.swift",
+            syntax: SwiftVaporSyntax.sourceFile(imports: ["import Vapor"], declarations: declarations)
+        )
     }
 
     private var serviceDefinitions: [(propertyName: String, serviceTypeName: String, controllerTypeName: String)] {

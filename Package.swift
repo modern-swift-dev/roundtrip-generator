@@ -64,7 +64,10 @@ let package = Package(
             dependencies: [
                 "GeneratorBuilder",
                 "GeneratorModels",
-                "SwiftApiGenerator"
+                "SwiftApiGenerator",
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
+                .product(name: "SwiftBasicFormat", package: "swift-syntax")
             ],
             path: "Sources/SwiftVaporGenerator",
             swiftSettings: swiftSettings

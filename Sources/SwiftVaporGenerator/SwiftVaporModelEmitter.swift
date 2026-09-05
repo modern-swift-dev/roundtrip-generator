@@ -1,6 +1,9 @@
+import SwiftApiGenerator
 import Foundation
 import GeneratorBuilder
 import GeneratorModels
+import SwiftSyntax
+import SwiftSyntaxBuilder
 
 struct SwiftVaporModelEmitter {
     let registry: SwiftVaporTypeRegistry
@@ -8,15 +11,12 @@ struct SwiftVaporModelEmitter {
     let packageImports: [ApiImport]
 
     func file(for registeredType: SwiftVaporRegisteredType) -> SwiftVaporGeneratedTextFile {
-        let imports = importLines(for: registeredType.dataType).joined(separator: "\n")
-        return SwiftVaporGeneratedTextFile(
+        SwiftVaporGeneratedTextFile(
             relativePath: "\(sourceRoot)/Generated/Models/\(registeredType.name).generated.swift",
-            contents: """
-            // Generated code. Do not edit.
-            \(imports)
-
-            \(declaration(for: registeredType))
-            """
+            syntax: SwiftVaporSyntax.sourceFile(
+                imports: importLines(for: registeredType.dataType),
+                declarations: declaration(for: registeredType).map { [$0] } ?? []
+            )
         )
     }
 
@@ -32,19 +32,19 @@ struct SwiftVaporModelEmitter {
         return (baseImports + extraImports).map(\.swiftVaporImportLine)
     }
 
-    func declaration(for registeredType: SwiftVaporRegisteredType) -> String {
+    func declaration(for registeredType: SwiftVaporRegisteredType) -> DeclSyntax? {
         switch registeredType.dataType {
             case let .object(_, properties, protocols, _, isValueType, _):
-                objectDeclaration(
+                DeclSyntax(objectDeclaration(
                     name: registeredType.name,
                     properties: properties,
                     protocols: protocols,
                     isValueType: isValueType
-                )
+                ))
             case let .stringEnum(_, values, _, _, supportGarbage):
-                stringEnumDeclaration(name: registeredType.name, values: values, supportGarbage: supportGarbage)
+                DeclSyntax(stringEnumDeclaration(name: registeredType.name, values: values, supportGarbage: supportGarbage))
             case let .intEnum(_, values, _, _):
-                intEnumDeclaration(name: registeredType.name, values: values)
+                DeclSyntax(intEnumDeclaration(name: registeredType.name, values: values))
             case let .dynamicObject(
             _,
             objectTypePropertyName,
@@ -56,7 +56,7 @@ struct SwiftVaporModelEmitter {
             _,
             extraProperties
         ):
-                dynamicObjectDeclaration(
+                DeclSyntax(dynamicObjectDeclaration(
                     name: registeredType.name,
                     objectTypePropertyName: objectTypePropertyName,
                     objectDataPropertyName: objectDataPropertyName,
@@ -64,11 +64,11 @@ struct SwiftVaporModelEmitter {
                     objectTypes: objectTypes,
                     supportGarbage: supportGarbage,
                     extraProperties: extraProperties
-                )
+                ))
             case let .reference(_, _, _, _, dataType):
-                dataType.map { declaration(for: .init(id: registeredType.id, name: registeredType.name, dataType: $0)) } ?? ""
+                dataType.flatMap { declaration(for: .init(id: registeredType.id, name: registeredType.name, dataType: $0)) }
             default:
-                ""
+                nil
         }
     }
 
@@ -77,7 +77,7 @@ struct SwiftVaporModelEmitter {
         properties: [ApiModelProperty],
         protocols: [String],
         isValueType: Bool
-    ) -> String {
+    ) -> DeclSyntax {
         let fields = properties.filter(\.publishedAsField)
         let hasPatchableFields = fields.contains { $0.dataType.isSwiftVaporPatchableValue }
         let equatableFields = fields.filter { $0.equatable || $0.hashable }
@@ -89,18 +89,18 @@ struct SwiftVaporModelEmitter {
                 || (!isValueType && (protocols.contains("Equatable") || protocols.contains("Hashable")))
         let shouldEmitHashableDeclaration = !hashableFields.isEmpty || (!isValueType && protocols.contains("Hashable"))
         let equatableComparison = if usesIdentityEquality {
-            "        lhs === rhs"
+            "lhs === rhs"
         } else if equatableFields.isEmpty {
-            "        true"
+            "true"
         } else {
-            equatableFields.map { "        lhs.\($0.propertyName) == rhs.\($0.propertyName)" }.joined(separator: " &&\n")
+            equatableFields.map { "lhs.\($0.propertyName) == rhs.\($0.propertyName)" }.joined(separator: " &&\n")
         }
         let hashLines = if usesIdentityHash {
-            "        hasher.combine(ObjectIdentifier(self))"
+            "hasher.combine(ObjectIdentifier(self))"
         } else if hashableFields.isEmpty {
-            "        hasher.combine(0)"
+            "hasher.combine(0)"
         } else {
-            hashableFields.map { "        hasher.combine(self.\($0.propertyName))" }.joined(separator: "\n")
+            hashableFields.map { "hasher.combine(self.\($0.propertyName))" }.joined(separator: "\n")
         }
         var conformances = isValueType ? ["Codable", "Sendable"] : ["Codable"]
         if !equatableFields.isEmpty || protocols.contains("Equatable") {
@@ -111,139 +111,107 @@ struct SwiftVaporModelEmitter {
         }
         conformances.append(contentsOf: protocols.filter { !conformances.contains($0) })
 
-        let fieldDeclarations = fields.map { property -> String in
-            let optional = property.swiftVaporOptionalSuffix
-            return "    public var \(property.propertyName): \(registry.swiftType(for: property.dataType))\(optional)"
-        }
-        .joined(separator: "\n")
-
         let initParameters = fields.map { property -> String in
-            let optional = property.swiftVaporOptionalSuffix
             let defaultValue = property.swiftVaporDefaultValue(registry: registry).map { " = \($0)" } ?? ""
-            return "\(property.propertyName): \(registry.swiftType(for: property.dataType))\(optional)\(defaultValue)"
-        }
-        .joined(separator: ", ")
+            return "\(property.propertyName): \(registry.swiftType(for: property.dataType))\(property.swiftVaporOptionalSuffix)\(defaultValue)"
+        }.joined(separator: ", ")
+        let assignments = fields.map { "self.\($0.propertyName) = \($0.propertyName)" }.joined(separator: "\n")
 
-        let assignments = fields.map { property in
-            "        self.\(property.propertyName) = \(property.propertyName)"
-        }
-        .joined(separator: "\n")
-
-        let codingKeys = fields.filter { $0.rawName != $0.propertyName }
-        let codingKeyDeclaration = if codingKeys.isEmpty, !hasPatchableFields {
-            ""
-        } else {
-            """
-
-                public enum CodingKeys: String, CodingKey {
-            \(fields.map { codingKeyLine($0) }.joined(separator: "\n"))
+        let members = SwiftGeneratedSyntax.parse("model \(name) members") {
+            try MemberBlockItemListSyntax {
+                for property in fields {
+                    try VariableDeclSyntax("public var \(raw: property.propertyName): \(raw: registry.swiftType(for: property.dataType))\(raw: property.swiftVaporOptionalSuffix)")
                 }
-            """
-        }
-
-        let customCodingDeclaration = if hasPatchableFields {
-            """
-
-                public \(isValueType ? "" : "required ")init(from decoder: any Decoder) throws {
-                    let container = try decoder.container(keyedBy: CodingKeys.self)
-            \(fields.map { decodeLine($0) }.joined(separator: "\n"))
+                try InitializerDeclSyntax("public init(\(raw: initParameters))") {
+                    CodeBlockItemListSyntax(stringLiteral: assignments)
                 }
-
-                public func encode(to encoder: any Encoder) throws {
-                    var container = encoder.container(keyedBy: CodingKeys.self)
-            \(fields.map { encodeLine($0) }.joined(separator: "\n"))
+                if fields.contains(where: { $0.rawName != $0.propertyName }) || hasPatchableFields {
+                    try EnumDeclSyntax("public enum CodingKeys: String, CodingKey") {
+                        for property in fields {
+                            try EnumCaseDeclSyntax("\(raw: codingKeyLine(property))")
+                        }
+                    }
                 }
-            """
-        } else {
-            ""
+                if hasPatchableFields {
+                    try InitializerDeclSyntax("public \(raw: isValueType ? "" : "required ")init(from decoder: any Decoder) throws") {
+                        "let container = try decoder.container(keyedBy: CodingKeys.self)"
+                        CodeBlockItemListSyntax(stringLiteral: fields.map { decodeLine($0) }.joined(separator: "\n"))
+                    }
+                    try FunctionDeclSyntax("public func encode(to encoder: any Encoder) throws") {
+                        "var container = encoder.container(keyedBy: CodingKeys.self)"
+                        CodeBlockItemListSyntax(stringLiteral: fields.map { encodeLine($0) }.joined(separator: "\n"))
+                    }
+                }
+                if shouldEmitEquatableDeclaration {
+                    try FunctionDeclSyntax("public static func == (lhs: \(raw: name), rhs: \(raw: name)) -> Bool") {
+                        "\(raw: equatableComparison)"
+                    }
+                }
+                if shouldEmitHashableDeclaration {
+                    try FunctionDeclSyntax("public func hash(into hasher: inout Hasher)") {
+                        CodeBlockItemListSyntax(stringLiteral: hashLines)
+                    }
+                }
+            }
         }
-        let equatableDeclaration = shouldEmitEquatableDeclaration ? """
-
-            public static func == (lhs: \(name), rhs: \(name)) -> Bool {
-        \(equatableComparison)
+        return SwiftGeneratedSyntax.parse("model \(name)") {
+            if isValueType {
+                DeclSyntax(try StructDeclSyntax("public struct \(raw: name): \(raw: conformances.joined(separator: ", "))") {
+                    members
+                })
+            } else {
+                DeclSyntax(try ClassDeclSyntax("public class \(raw: name): \(raw: conformances.joined(separator: ", "))") {
+                    members
+                })
             }
-        """ : ""
-        let hashableDeclaration = shouldEmitHashableDeclaration ? """
-
-            public func hash(into hasher: inout Hasher) {
-        \(hashLines)
-            }
-        """ : ""
-
-        return """
-        public \(isValueType ? "struct" : "class") \(name): \(conformances.joined(separator: ", ")) {
-        \(fieldDeclarations)
-
-            public init(\(initParameters)) {
-        \(assignments)
-            }
-        \(codingKeyDeclaration)\(customCodingDeclaration)\(equatableDeclaration)\(hashableDeclaration)
         }
-        """
     }
 
     private func stringEnumDeclaration(
         name: String,
         values: [(name: String, rawName: String)],
         supportGarbage: Bool
-    ) -> String {
-        let cases = values.map { value in
-            let caseName = value.name.swiftEnumValueDeclaration
-            if caseName == value.rawName {
-                return "    case \(caseName)"
-            }
-            return "    case \(caseName) = \(value.rawName.swiftVaporStringLiteral)"
-        }
-        .joined(separator: "\n")
-
-        let garbageCase = supportGarbage ? "\n    case garbage = \"__garbage__\"" : ""
-        let garbageDecode = supportGarbage
-            ? """
-
-                public init(from decoder: Decoder) throws {
-                    do {
-                        let container = try decoder.singleValueContainer()
-                        let value = try container.decode(String.self)
-                        self = Self(rawValue: value) ?? .garbage
-                    } catch {
-                        self = .garbage
+    ) -> EnumDeclSyntax {
+        SwiftGeneratedSyntax.parse("string enum \(name)") {
+            try EnumDeclSyntax("public enum \(raw: name): String, Codable, Sendable, CaseIterable, Identifiable") {
+                for value in values {
+                    let caseName = value.name.swiftEnumValueDeclaration
+                    if caseName == value.rawName {
+                        try EnumCaseDeclSyntax("case \(raw: caseName)")
+                    } else {
+                        try EnumCaseDeclSyntax("case \(raw: caseName) = \(raw: value.rawName.swiftVaporStringLiteral)")
                     }
                 }
-            """
-            : ""
-
-        return """
-        public enum \(name): String, Codable, Sendable, CaseIterable, Identifiable {
-        \(cases)\(garbageCase)
-
-            public var id: String {
-                rawValue
+                if supportGarbage {
+                    try EnumCaseDeclSyntax("case garbage = \"__garbage__\"")
+                }
+                try VariableDeclSyntax("public var id: String { rawValue }")
+                if supportGarbage {
+                    try InitializerDeclSyntax("public init(from decoder: Decoder) throws") {
+                        """
+                        do {
+                            let container = try decoder.singleValueContainer()
+                            let value = try container.decode(String.self)
+                            self = Self(rawValue: value) ?? .garbage
+                        } catch {
+                            self = .garbage
+                        }
+                        """
+                    }
+                }
             }
-        \(garbageDecode)
         }
-        """
     }
 
-    private func intEnumDeclaration(name: String, values: [(name: String?, rawValue: Int)]) -> String {
-        let cases = values.map { value -> String in
-            let caseName = if let name = value.name, !name.isEmpty {
-                name.swiftEnumValueDeclaration
-            } else {
-                value.rawValue.swiftVaporIntCaseName
-            }
-            return "    case \(caseName) = \(value.rawValue)"
-        }
-        .joined(separator: "\n")
-
-        return """
-        public enum \(name): Int, Codable, Sendable, CaseIterable, Identifiable {
-        \(cases)
-
-            public var id: Int {
-                rawValue
+    private func intEnumDeclaration(name: String, values: [(name: String?, rawValue: Int)]) -> EnumDeclSyntax {
+        SwiftGeneratedSyntax.parse("integer enum \(name)") {
+            try EnumDeclSyntax("public enum \(raw: name): Int, Codable, Sendable, CaseIterable, Identifiable") {
+                for value in values {
+                    try EnumCaseDeclSyntax("case \(raw: swiftVaporIntCaseName(value)) = \(raw: value.rawValue)")
+                }
+                try VariableDeclSyntax("public var id: Int { rawValue }")
             }
         }
-        """
     }
 
     private func dynamicObjectDeclaration(
@@ -254,7 +222,7 @@ struct SwiftVaporModelEmitter {
         objectTypes: [(objectTypeName: String, objectTypeRawName: String, objectType: ApiTypeSchema)],
         supportGarbage: Bool,
         extraProperties: [ApiModelProperty]
-    ) -> String {
+    ) -> EnumDeclSyntax {
         let supportsIdentity = objectTypes.allSatisfy { supportsDynamicObjectIdentifiable($0.objectType) }
         let supportsSendable = objectTypes.allSatisfy(\.objectType.isSwiftVaporSendable)
             && extraProperties.allSatisfy(\.dataType.isSwiftVaporSendable)
@@ -269,60 +237,60 @@ struct SwiftVaporModelEmitter {
         ]
         .compactMap(\.self)
         .joined(separator: ", ")
-        var caseLines = supportGarbage ? ["    case garbage"] : []
-        caseLines.append(contentsOf: objectTypes.map { dynamicObjectCaseLine($0, extraProperties: extraProperties) })
-        let declarations = [
-            dynamicObjectInitDeclaration(
-                name: name,
-                objectDataPropertyName: objectDataPropertyName,
-                objectTypes: objectTypes,
-                supportGarbage: supportGarbage,
-                extraProperties: extraProperties
-            ),
-            dynamicObjectEncodeDeclaration(
-                objectDataPropertyName: objectDataPropertyName,
-                objectTypes: objectTypes,
-                supportGarbage: supportGarbage,
-                extraProperties: extraProperties
-            ),
-            objectDataPropertyName == "__self__" ? "" : dynamicObjectDecodeCustomTypeDeclaration(),
-            dynamicObjectCodingKeysDeclaration(
-                objectTypePropertyName: objectTypePropertyName,
-                objectDataPropertyName: objectDataPropertyName == "__self__" ? nil : objectDataPropertyName,
-                alternateObjectDataPropertyName: objectDataPropertyName == "__self__" ? nil : alternateObjectDataPropertyName,
-                extraProperties: extraProperties
-            ),
-            dynamicObjectTypeEnumDeclaration(objectTypes: objectTypes, supportGarbage: supportGarbage),
-            dynamicObjectTypePropertyDeclaration(objectTypes: objectTypes, supportGarbage: supportGarbage),
-            supportsIdentity
-                ? dynamicObjectIDDeclaration(objectTypes: objectTypes, supportGarbage: supportGarbage, extraProperties: extraProperties)
-                : "",
-            supportsEquatable
-                ? dynamicObjectEquatableDeclaration(objectTypes: objectTypes, supportGarbage: supportGarbage, extraProperties: extraProperties)
-                : "",
-            supportsHashable
-                ? dynamicObjectHashableDeclaration(objectTypes: objectTypes, supportGarbage: supportGarbage, extraProperties: extraProperties)
-                : ""
-        ]
-        .filter { !$0.isEmpty }
-        .joined(separator: "\n\n")
-
-        return """
-        public enum \(name): \(conformances) {
-        \(caseLines.joined(separator: "\n"))
-
-        \(declarations)
+        return SwiftGeneratedSyntax.parse("dynamic object \(name)") {
+            try EnumDeclSyntax("public enum \(raw: name): \(raw: conformances)") {
+                if supportGarbage {
+                    try EnumCaseDeclSyntax("case garbage")
+                }
+                for objectType in objectTypes {
+                    dynamicObjectCaseLine(objectType, extraProperties: extraProperties)
+                }
+                dynamicObjectInitDeclaration(
+                    name: name,
+                    objectDataPropertyName: objectDataPropertyName,
+                    objectTypes: objectTypes,
+                    supportGarbage: supportGarbage,
+                    extraProperties: extraProperties
+                )
+                dynamicObjectEncodeDeclaration(
+                    objectDataPropertyName: objectDataPropertyName,
+                    objectTypes: objectTypes,
+                    supportGarbage: supportGarbage,
+                    extraProperties: extraProperties
+                )
+                if objectDataPropertyName != "__self__" {
+                    dynamicObjectDecodeCustomTypeDeclaration()
+                }
+                dynamicObjectCodingKeysDeclaration(
+                    objectTypePropertyName: objectTypePropertyName,
+                    objectDataPropertyName: objectDataPropertyName == "__self__" ? nil : objectDataPropertyName,
+                    alternateObjectDataPropertyName: objectDataPropertyName == "__self__" ? nil : alternateObjectDataPropertyName,
+                    extraProperties: extraProperties
+                )
+                dynamicObjectTypeEnumDeclaration(objectTypes: objectTypes, supportGarbage: supportGarbage)
+                dynamicObjectTypePropertyDeclaration(objectTypes: objectTypes, supportGarbage: supportGarbage)
+                if supportsIdentity {
+                    dynamicObjectIDDeclaration(objectTypes: objectTypes, supportGarbage: supportGarbage, extraProperties: extraProperties)
+                }
+                if supportsEquatable {
+                    dynamicObjectEquatableDeclaration(objectTypes: objectTypes, supportGarbage: supportGarbage, extraProperties: extraProperties)
+                }
+                if supportsHashable {
+                    dynamicObjectHashableDeclaration(objectTypes: objectTypes, supportGarbage: supportGarbage, extraProperties: extraProperties)
+                }
+            }
         }
-        """
     }
 
     private func dynamicObjectCaseLine(
         _ objectType: (objectTypeName: String, objectTypeRawName: String, objectType: ApiTypeSchema),
         extraProperties: [ApiModelProperty]
-    ) -> String {
+    ) -> EnumCaseDeclSyntax {
         let associatedTypes = extraProperties.map(swiftTypeDeclaration)
             + [registry.swiftType(for: objectType.objectType)]
-        return "    case \(objectType.objectTypeName.swiftEnumValueDeclaration)(\(associatedTypes.joined(separator: ", ")))"
+        return SwiftGeneratedSyntax.parse("dynamic object case") {
+            try EnumCaseDeclSyntax("case \(raw: objectType.objectTypeName.swiftEnumValueDeclaration)(\(raw: associatedTypes.joined(separator: ", ")))")
+        }
     }
 
     private func swiftTypeDeclaration(for property: ApiModelProperty) -> String {
@@ -335,7 +303,7 @@ struct SwiftVaporModelEmitter {
         objectTypes: [(objectTypeName: String, objectTypeRawName: String, objectType: ApiTypeSchema)],
         supportGarbage: Bool,
         extraProperties: [ApiModelProperty]
-    ) -> String {
+    ) -> InitializerDeclSyntax {
         let containerName = dynamicObjectLocalVariableName(
             baseName: "container",
             usedNames: Set(extraProperties.map(\.propertyName) + ["contentType", "decoder"])
@@ -376,11 +344,15 @@ struct SwiftVaporModelEmitter {
             body.prepad(1)
         }
 
-        return """
-            public init(from decoder: Decoder) throws {
-        \(bodySource)
-            }
-        """
+        return SwiftGeneratedSyntax.parse("dynamicObjectInitDeclaration") {
+            try InitializerDeclSyntax(
+                """
+                    public init(from decoder: Decoder) throws {
+                \(raw: bodySource)
+                    }
+                """
+            )
+        }
     }
 
     private func dynamicObjectDecodeSwitchLines(
@@ -436,7 +408,7 @@ struct SwiftVaporModelEmitter {
         objectTypes: [(objectTypeName: String, objectTypeRawName: String, objectType: ApiTypeSchema)],
         supportGarbage: Bool,
         extraProperties: [ApiModelProperty]
-    ) -> String {
+    ) -> FunctionDeclSyntax {
         let payloadName = dynamicObjectPayloadBindingName(extraProperties: extraProperties)
         let containerName = dynamicObjectLocalVariableName(
             baseName: "container",
@@ -472,15 +444,19 @@ struct SwiftVaporModelEmitter {
             """
         })
 
-        return """
-            public func encode(to encoder: Encoder) throws {
-                var \(containerName) = encoder.container(keyedBy: CodingKeys.self)
-                try \(containerName).encode(objectType, forKey: .contentType)
-                switch self {
-        \(switchLines.joined(separator: "\n"))
-                }
-            }
-        """
+        return SwiftGeneratedSyntax.parse("dynamicObjectEncodeDeclaration") {
+            try FunctionDeclSyntax(
+                """
+                    public func encode(to encoder: Encoder) throws {
+                        var \(raw: containerName) = encoder.container(keyedBy: CodingKeys.self)
+                        try \(raw: containerName).encode(objectType, forKey: .contentType)
+                        switch self {
+                \(raw: switchLines.joined(separator: "\n"))
+                        }
+                    }
+                """
+            )
+        }
     }
 
     private func dynamicObjectPayloadBindingName(extraProperties: [ApiModelProperty]) -> String {
@@ -523,22 +499,26 @@ struct SwiftVaporModelEmitter {
         return candidate
     }
 
-    private func dynamicObjectDecodeCustomTypeDeclaration() -> String {
-        """
-            private static func decodeCustomType<T: Decodable>(_ container: KeyedDecodingContainer<CodingKeys>) throws -> T {
-                if let value = try container.decodeIfPresent(T.self, forKey: .extras) {
-                    return value
-                }
+    private func dynamicObjectDecodeCustomTypeDeclaration() -> FunctionDeclSyntax {
+        return SwiftGeneratedSyntax.parse("dynamicObjectDecodeCustomTypeDeclaration") {
+            try FunctionDeclSyntax(
+                """
+                    private static func decodeCustomType<T: Decodable>(_ container: KeyedDecodingContainer<CodingKeys>) throws -> T {
+                        if let value = try container.decodeIfPresent(T.self, forKey: .extras) {
+                            return value
+                        }
 
-                if let value = try container.decodeIfPresent(T.self, forKey: .extra) {
-                    return value
-                }
+                        if let value = try container.decodeIfPresent(T.self, forKey: .extra) {
+                            return value
+                        }
 
-            throw DecodingError.dataCorrupted(
-                DecodingError.Context(codingPath: container.codingPath, debugDescription: "Missing object data")
+                    throw DecodingError.dataCorrupted(
+                        DecodingError.Context(codingPath: container.codingPath, debugDescription: "Missing object data")
+                    )
+                }
+                """
             )
         }
-        """
     }
 
     private func dynamicObjectCodingKeysDeclaration(
@@ -546,68 +526,62 @@ struct SwiftVaporModelEmitter {
         objectDataPropertyName: String?,
         alternateObjectDataPropertyName: String?,
         extraProperties: [ApiModelProperty]
-    ) -> String {
-        var lines = ["        case contentType = \(objectTypePropertyName.swiftVaporStringLiteral)"]
-        if let objectDataPropertyName {
-            lines.append("        case extras = \(objectDataPropertyName.swiftVaporStringLiteral)")
-        }
-        if let alternateObjectDataPropertyName {
-            lines.append("        case extra = \(alternateObjectDataPropertyName.swiftVaporStringLiteral)")
-        }
-        lines.append(contentsOf: extraProperties.map {
-            "        case \($0.propertyName) = \($0.rawName.swiftVaporStringLiteral)"
-        })
-
-        return """
-            public enum CodingKeys: String, CodingKey {
-        \(lines.joined(separator: "\n"))
+    ) -> EnumDeclSyntax {
+        SwiftGeneratedSyntax.parse("dynamic object coding keys") {
+            try EnumDeclSyntax("public enum CodingKeys: String, CodingKey") {
+                try EnumCaseDeclSyntax("case contentType = \(raw: objectTypePropertyName.swiftVaporStringLiteral)")
+                if let objectDataPropertyName {
+                    try EnumCaseDeclSyntax("case extras = \(raw: objectDataPropertyName.swiftVaporStringLiteral)")
+                }
+                if let alternateObjectDataPropertyName {
+                    try EnumCaseDeclSyntax("case extra = \(raw: alternateObjectDataPropertyName.swiftVaporStringLiteral)")
+                }
+                for property in extraProperties {
+                    try EnumCaseDeclSyntax("case \(raw: property.propertyName) = \(raw: property.rawName.swiftVaporStringLiteral)")
+                }
             }
-        """
+        }
     }
 
     private func dynamicObjectTypeEnumDeclaration(
         objectTypes: [(objectTypeName: String, objectTypeRawName: String, objectType: ApiTypeSchema)],
         supportGarbage: Bool
-    ) -> String {
-        var lines = supportGarbage ? ["        case garbage = \"__garbage__\""] : []
-        lines.append(contentsOf: objectTypes.map { objectType in
-            let caseName = objectType.objectTypeName.swiftEnumValueDeclaration
-            if caseName == objectType.objectTypeRawName {
-                return "        case \(caseName)"
-            }
-            return "        case \(caseName) = \(objectType.objectTypeRawName.swiftVaporStringLiteral)"
-        })
-        let garbageDecode = supportGarbage
-            ? """
-
-                public init(from decoder: Decoder) throws {
-                    do {
-                        let container = try decoder.singleValueContainer()
-                        let value = try container.decode(String.self)
-                        self = Self(rawValue: value) ?? .garbage
-                    } catch {
-                        self = .garbage
+    ) -> EnumDeclSyntax {
+        SwiftGeneratedSyntax.parse("dynamic object type enum") {
+            try EnumDeclSyntax("public enum ObjectType: String, Codable, Sendable, CaseIterable, Identifiable") {
+                if supportGarbage {
+                    try EnumCaseDeclSyntax("case garbage = \"__garbage__\"")
+                }
+                for objectType in objectTypes {
+                    let caseName = objectType.objectTypeName.swiftEnumValueDeclaration
+                    if caseName == objectType.objectTypeRawName {
+                        try EnumCaseDeclSyntax("case \(raw: caseName)")
+                    } else {
+                        try EnumCaseDeclSyntax("case \(raw: caseName) = \(raw: objectType.objectTypeRawName.swiftVaporStringLiteral)")
                     }
                 }
-            """
-            : ""
-
-        return """
-            public enum ObjectType: String, Codable, Sendable, CaseIterable, Identifiable {
-        \(lines.joined(separator: "\n"))
-
-                public var id: String {
-                    rawValue
+                try VariableDeclSyntax("public var id: String { rawValue }")
+                if supportGarbage {
+                    try InitializerDeclSyntax("public init(from decoder: Decoder) throws") {
+                        """
+                        do {
+                            let container = try decoder.singleValueContainer()
+                            let value = try container.decode(String.self)
+                            self = Self(rawValue: value) ?? .garbage
+                        } catch {
+                            self = .garbage
+                        }
+                        """
+                    }
                 }
-        \(garbageDecode)
             }
-        """
+        }
     }
 
     private func dynamicObjectTypePropertyDeclaration(
         objectTypes: [(objectTypeName: String, objectTypeRawName: String, objectType: ApiTypeSchema)],
         supportGarbage: Bool
-    ) -> String {
+    ) -> VariableDeclSyntax {
         var lines = supportGarbage ? [
             """
                     case .garbage:
@@ -622,20 +596,24 @@ struct SwiftVaporModelEmitter {
             """
         })
 
-        return """
-            public var objectType: ObjectType {
-                switch self {
-        \(lines.joined(separator: "\n"))
-                }
-            }
-        """
+        return SwiftGeneratedSyntax.parse("dynamicObjectTypePropertyDeclaration") {
+            try VariableDeclSyntax(
+                """
+                    public var objectType: ObjectType {
+                        switch self {
+                \(raw: lines.joined(separator: "\n"))
+                        }
+                    }
+                """
+            )
+        }
     }
 
     private func dynamicObjectIDDeclaration(
         objectTypes: [(objectTypeName: String, objectTypeRawName: String, objectType: ApiTypeSchema)],
         supportGarbage: Bool,
         extraProperties: [ApiModelProperty]
-    ) -> String {
+    ) -> VariableDeclSyntax {
         var idLines = supportGarbage ? [
             """
                     case .garbage:
@@ -651,20 +629,24 @@ struct SwiftVaporModelEmitter {
             """
         })
 
-        return """
-            public var id: String {
-                switch self {
-        \(idLines.joined(separator: "\n"))
-                }
-            }
-        """
+        return SwiftGeneratedSyntax.parse("dynamicObjectIDDeclaration") {
+            try VariableDeclSyntax(
+                """
+                    public var id: String {
+                        switch self {
+                \(raw: idLines.joined(separator: "\n"))
+                        }
+                    }
+                """
+            )
+        }
     }
 
     private func dynamicObjectEquatableDeclaration(
         objectTypes: [(objectTypeName: String, objectTypeRawName: String, objectType: ApiTypeSchema)],
         supportGarbage: Bool,
         extraProperties: [ApiModelProperty]
-    ) -> String {
+    ) -> FunctionDeclSyntax {
         var lines = supportGarbage ? [
             """
                     case (.garbage, .garbage):
@@ -688,20 +670,24 @@ struct SwiftVaporModelEmitter {
                     return false
         """)
 
-        return """
-            public static func == (lhs: Self, rhs: Self) -> Bool {
-                switch (lhs, rhs) {
-        \(lines.joined(separator: "\n"))
-                }
-            }
-        """
+        return SwiftGeneratedSyntax.parse("dynamicObjectEquatableDeclaration") {
+            try FunctionDeclSyntax(
+                """
+                    public static func == (lhs: Self, rhs: Self) -> Bool {
+                        switch (lhs, rhs) {
+                \(raw: lines.joined(separator: "\n"))
+                        }
+                    }
+                """
+            )
+        }
     }
 
     private func dynamicObjectHashableDeclaration(
         objectTypes: [(objectTypeName: String, objectTypeRawName: String, objectType: ApiTypeSchema)],
         supportGarbage: Bool,
         extraProperties: [ApiModelProperty]
-    ) -> String {
+    ) -> FunctionDeclSyntax {
         var lines = supportGarbage ? [
             """
                     case .garbage:
@@ -719,13 +705,17 @@ struct SwiftVaporModelEmitter {
             """
         })
 
-        return """
-            public func hash(into hasher: inout Hasher) {
-                switch self {
-        \(lines.joined(separator: "\n"))
-                }
-            }
-        """
+        return SwiftGeneratedSyntax.parse("dynamicObjectHashableDeclaration") {
+            try FunctionDeclSyntax(
+                """
+                    public func hash(into hasher: inout Hasher) {
+                        switch self {
+                \(raw: lines.joined(separator: "\n"))
+                        }
+                    }
+                """
+            )
+        }
     }
 
     private func dynamicObjectAssociatedValueNames(prefix: String, extraProperties: [ApiModelProperty]) -> [String] {
@@ -840,31 +830,31 @@ struct SwiftVaporModelEmitter {
 
     private func codingKeyLine(_ property: ApiModelProperty) -> String {
         if property.rawName == property.propertyName {
-            return "        case \(property.propertyName)"
+            return "case \(property.propertyName)"
         }
-        return "        case \(property.propertyName) = \(property.rawName.swiftVaporStringLiteral)"
+        return "case \(property.propertyName) = \(property.rawName.swiftVaporStringLiteral)"
     }
 
     private func decodeLine(_ property: ApiModelProperty) -> String {
         let type = registry.swiftType(for: property.dataType)
         if property.dataType.isSwiftVaporPatchableValue {
-            return "        self.\(property.propertyName) = try container.decodePatchable(\(type).self, forKey: .\(property.propertyName))"
+            return "self.\(property.propertyName) = try container.decodePatchable(\(type).self, forKey: .\(property.propertyName))"
         }
         if property.required {
-            return "        self.\(property.propertyName) = try container.decode(\(type).self, forKey: .\(property.propertyName))"
+            return "self.\(property.propertyName) = try container.decode(\(type).self, forKey: .\(property.propertyName))"
         }
-        return "        self.\(property.propertyName) = try container.decodeIfPresent(\(type).self, forKey: .\(property.propertyName))"
+        return "self.\(property.propertyName) = try container.decodeIfPresent(\(type).self, forKey: .\(property.propertyName))"
     }
 
     private func encodeLine(_ property: ApiModelProperty) -> String {
         let name = property.propertyName
         if property.dataType.isSwiftVaporPatchableValue {
-            return "        try container.encodePatchable(self.\(name), forKey: .\(name))"
+            return "try container.encodePatchable(self.\(name), forKey: .\(name))"
         }
         if property.required {
-            return "        try container.encode(self.\(name), forKey: .\(name))"
+            return "try container.encode(self.\(name), forKey: .\(name))"
         }
-        return "        try container.encodeIfPresent(self.\(name), forKey: .\(name))"
+        return "try container.encodeIfPresent(self.\(name), forKey: .\(name))"
     }
 }
 
