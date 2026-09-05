@@ -1,0 +1,7 @@
+# Generated code. Do not edit.
+root = true
+
+[*.{kt,kts}]
+indent_style = space
+indent_size = 4
+ktlint_code_style = ktlint_official

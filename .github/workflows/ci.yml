@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify Swift 6.3
+        run: swift --version | grep -F 'Swift version 6.3'
+      - name: Install lint tools
+        run: |
+          brew install mint actionlint
+          mint bootstrap
+      - name: Lint
+        run: make lint
+
+  build-and-test:
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install xcbeautify
+        run: |
+          brew install mint
+          mint install cpisciotta/xcbeautify
+      - name: Verify Swift 6.3
+        run: swift --version | grep -F 'Swift version 6.3'
+      - name: Build
+        run: swift build 2>&1 | mint run --no-install cpisciotta/xcbeautify -q
+      - name: Test
+        run: swift test 2>&1 | mint run --no-install cpisciotta/xcbeautify -q
