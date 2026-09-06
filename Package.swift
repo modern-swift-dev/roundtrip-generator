@@ -32,7 +32,8 @@ let package = Package(
         .library(name: "GeneratorBuilder", targets: ["GeneratorBuilder"])
     ],
     dependencies: [
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.2")
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.2"),
+        .package(url: "https://github.com/swiftlang/swift-docc-plugin", exact: "1.5.0")
     ],
     targets: [
         .target(

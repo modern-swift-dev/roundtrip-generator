@@ -2,6 +2,8 @@
 
 Describe an API once in Swift and generate clients, server scaffolding, and OpenAPI documentation.
 
+Read the [published documentation](https://modern-swift-dev.github.io/docs/roundtrip-generator/) for the API generation tutorial and API references.
+
 ## Products
 
 - `SwiftApiGenerator`: Swift clients using [RoundTrip and RoundTripREST](https://github.com/modern-swift-dev/roundtrip-swift).
