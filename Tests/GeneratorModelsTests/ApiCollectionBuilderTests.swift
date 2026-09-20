@@ -30,7 +30,8 @@ struct ApiCollectionBuilderTests {
         }
         #expect(name == "User")
         #expect(properties.map(\.rawName) == ["name", "created_at", "updated_at", "visible", "email", "phone"])
-        #expect(try !#require(properties.last?.required))
+        let lastProperty = try #require(properties.last)
+        #expect(!lastProperty.required)
     }
 
     @Test func `builder and array declarations are equivalent`() {

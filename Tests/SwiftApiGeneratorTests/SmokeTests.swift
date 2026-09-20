@@ -564,7 +564,26 @@ import Testing
             .swiftCode(parentClassName: "", imports: [])
             .toString()
 
+        #expect(output.contains("CharacterSet(charactersIn: \"/:\")"))
         #expect(output.contains("addingPercentEncoding(withAllowedCharacters: pathSegmentAllowedCharacters) ?? String(self.id)"))
+    }
+
+    @Test func `path parameters preserve percent encoding when building requests`() {
+        let operation = ApiOperation.get(
+            name: "get",
+            path: .relative("/users/{id}"),
+            parameters: [
+                .path("id", .string())
+            ],
+        )
+
+        let output = ApiOperationGenerator(operation: operation)
+            .swiftCode(parentClassName: "", imports: [])
+            .toString()
+
+        #expect(output.contains("components.percentEncodedPath = requestPath"))
+        #expect(output.contains("var request = try URLRequest(url: url, queryParams: nil)"))
+        #expect(!output.contains("URLRequest(\n                        baseUrl: baseUrl,\n                        path: requestPath"))
     }
 
     @Test func `parameter enum defaults unwrap references recursively`() {

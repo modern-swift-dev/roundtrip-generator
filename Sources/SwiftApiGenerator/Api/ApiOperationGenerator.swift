@@ -450,7 +450,17 @@ struct ApiOperationGenerator {
     private func generateUrlRequestConvertibleSyntax(hasBody: Bool, hasQueryParams: Bool, hasHeaders: Bool) -> FunctionDeclSyntax {
         let requestBuildSource = switch operation.path {
             case .relative:
-                if hasQueryParams {
+                if operation.expandedParameters.contains(where: { $0.location == .path }) {
+                    """
+                    guard let baseUrl else { throw ApiError.invalidURL }
+                    guard var components = URLComponents(url: baseUrl, resolvingAgainstBaseURL: true) else {
+                        throw ApiError.invalidURL
+                    }
+                    components.percentEncodedPath = requestPath
+                    guard let url = components.url else { throw ApiError.invalidURL }
+                    var request = try URLRequest(url: url, queryParams: \(hasQueryParams ? "queryParameters" : "nil"))
+                    """
+                } else if hasQueryParams {
                     """
                     guard let baseUrl else { throw ApiError.invalidURL }
                     var request = try URLRequest(
@@ -778,7 +788,7 @@ struct ApiOperationGenerator {
             try VariableDeclSyntax(
                 """
                 public var requestPath: String {
-                    let pathSegmentAllowedCharacters = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))
+                    let pathSegmentAllowedCharacters = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/:"))
                     var path = \(raw: effectivePath.debugDescription)
                 \(raw: replacementSource)
                     return path
