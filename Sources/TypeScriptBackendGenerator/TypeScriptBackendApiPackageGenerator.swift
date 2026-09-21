@@ -67,9 +67,6 @@ public struct TypeScriptBackendApiPackageGenerator {
         try validateGeneratedTypeNames(generatedDataTypes())
         for dataType in packageDataTypes() {
             try validate(dataType: dataType)
-            if let external = dataType.backendExternalTypeName {
-                throw TypeScriptBackendGeneratorError.unresolvedExternalType(external)
-            }
         }
     }
 
@@ -118,8 +115,10 @@ public struct TypeScriptBackendApiPackageGenerator {
                 break
             case let .genericReference(typeName, types) where typeName == "PatchableValue" && types.count == 1:
                 try validate(dataType: types[0])
-            case .genericReference:
-                throw TypeScriptBackendGeneratorError.unsupportedDataType(String(describing: dataType))
+            case let .genericReference(_, types):
+                for type in types {
+                    try validate(dataType: type)
+                }
         }
     }
 

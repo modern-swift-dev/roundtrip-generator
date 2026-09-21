@@ -45,6 +45,47 @@ struct TypeScriptBackendGeneratorTests {
         #expect(packageJSON.contains(#""zod": "^4.4.3""#))
     }
 
+    @Test func generatedBackendExposesApplicationSchemaBindings() throws {
+        let external = ApiTypeSchema.reference(typeName: "ExternalUser", strict: false)
+        let envelope = ApiTypeSchema.object(
+            typeName: "Envelope",
+            properties: [
+                ApiModelProperty(rawName: "external_user", propertyName: "externalUser", dataType: external),
+                ApiModelProperty(
+                    rawName: "paged_results",
+                    propertyName: "pagedResults",
+                    dataType: .genericReference(typeName: "PagedResults", genericTypes: [.string()]),
+                )
+            ],
+        )
+        let operation = ApiOperation.post(
+            name: "custom",
+            path: .relative("/custom"),
+            security: .unsecured,
+            request: envelope.asRef,
+            response: envelope.asRef,
+            acceptableStatuses: [200],
+        )
+
+        let files = try TypeScriptBackendApiPackageGenerator(package: testPackage(operation: operation, references: [envelope])).generatedFiles()
+        let models = try #require(files.first { $0.relativePath == "src/generated/models.ts" }?.contents)
+        let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+
+        #expect(models.contains("externalUser: unknown;"))
+        #expect(models.contains("pagedResults: PagedResults<string>;"))
+        #expect(models.contains("export interface PagedResults<T>"))
+        #expect(models.contains("PagedResultsWireSchema"))
+        #expect(routes.contains("export interface GeneratedOperationBinding"))
+        #expect(routes.contains("GeneratedSchemaBinding<Output = unknown, Input = unknown>"))
+        #expect(routes.contains("GeneratedOperationBinding<HandlerInput = unknown, HandlerOutput = unknown, WireOutput = unknown>"))
+        #expect(routes.contains("export type GeneratedHandlerInput"))
+        #expect(routes.contains("input"))
+        #expect(routes.contains("output"))
+        #expect(routes.contains("Missing schema binding for adminUsersCustom input"))
+        #expect(routes.contains("Missing schema binding for adminUsersCustom output"))
+        #expect(routes.contains("bindings?: Bindings"))
+    }
+
     @Test func generatedBackendUsesLosslessNumbersForIntegerBoundaries() throws {
         let record = ApiTypeSchema.object(
             typeName: "Record",

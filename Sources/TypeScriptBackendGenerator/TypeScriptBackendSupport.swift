@@ -95,6 +95,29 @@ extension ApiTypeSchema {
         return types[0]
     }
 
+    var containsBackendCustomizableType: Bool {
+        switch self {
+            case let .reference(_, _, _, _, resolved):
+                resolved == nil || resolved?.containsBackendCustomizableType == true
+            case let .genericReference(typeName, types):
+                typeName != "PatchableValue" || types.contains(where: \.containsBackendCustomizableType)
+            case let .array(type),
+                 let .keyedByString(type, _):
+                type.containsBackendCustomizableType
+            case let .object(_, properties, _, _, _, _):
+                properties
+                    .filter(\.publishedAsField)
+                    .contains { $0.dataType.containsBackendCustomizableType }
+            case let .dynamicObject(_, _, _, _, objectTypes, _, _, _, extraProperties):
+                objectTypes.contains { $0.objectType.containsBackendCustomizableType }
+                    || extraProperties
+                    .filter(\.publishedAsField)
+                    .contains { $0.dataType.containsBackendCustomizableType }
+            default:
+                false
+        }
+    }
+
     var backendDeclaredTypeID: UUID? {
         switch self {
             case let .object(_, _, _, _, _, uuid),

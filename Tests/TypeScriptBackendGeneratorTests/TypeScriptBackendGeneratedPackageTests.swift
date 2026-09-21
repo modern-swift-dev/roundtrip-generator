@@ -84,6 +84,28 @@ struct TypeScriptBackendGeneratedPackageTests {
                 .keyedByString("labels", valueType: .string(), required: false, valueOptional: true)
             ],
         )
+        let transformedUser = ApiTypeSchema.object(
+            typeName: "TransformedUser",
+            properties: [
+                .string("display_name", propertyName: "displayName"),
+                .bool("active")
+            ],
+        )
+        let externalEnvelope = ApiTypeSchema.object(
+            typeName: "ExternalEnvelope",
+            properties: [
+                ApiModelProperty(
+                    rawName: "external_user",
+                    propertyName: "externalUser",
+                    dataType: .reference(typeName: "ExternalUser", strict: false),
+                ),
+                ApiModelProperty(
+                    rawName: "paged_results",
+                    propertyName: "pagedResults",
+                    dataType: .genericReference(typeName: "PagedResults", genericTypes: [.string()]),
+                )
+            ],
+        )
         let user = ApiTypeSchema.object(
             typeName: "User",
             properties: [
@@ -136,6 +158,22 @@ struct TypeScriptBackendGeneratedPackageTests {
             response: patchedUser.asRef,
             acceptableStatuses: [200],
         )
+        let transformOperation = ApiOperation.post(
+            name: "transform",
+            path: .relative("/transformed-users"),
+            security: .unsecured,
+            request: transformedUser.asRef,
+            response: transformedUser.asRef,
+            acceptableStatuses: [200],
+        )
+        let externalOperation = ApiOperation.post(
+            name: "external",
+            path: .relative("/external"),
+            security: .unsecured,
+            request: externalEnvelope.asRef,
+            response: externalEnvelope.asRef,
+            acceptableStatuses: [200],
+        )
         let package = ApiPackage(
             name: "Example",
             targetDirUrl: root,
@@ -143,8 +181,8 @@ struct TypeScriptBackendGeneratedPackageTests {
                 ApiModule(name: "Admin", definitions: [
                     ApiService(
                         name: "Users",
-                        operations: [operation, eventOperation, embeddedOperation, patchOperation],
-                        references: [user, profile, address, state, magnitude, eventEnvelope, embeddedEnvelope, patchedUser, messagePayload, imagePayload],
+                        operations: [operation, eventOperation, embeddedOperation, patchOperation, transformOperation, externalOperation],
+                        references: [user, profile, address, state, magnitude, eventEnvelope, embeddedEnvelope, patchedUser, transformedUser, externalEnvelope, messagePayload, imagePayload],
                     )
                 ])
             ],
@@ -193,11 +231,49 @@ struct TypeScriptBackendGeneratedPackageTests {
         """
         import assert from "node:assert/strict";
         import express from "express";
+        import { z } from "zod";
         import { registerGeneratedRoutes } from "./dist/generated/routes.js";
 
         const app = express();
         let handlerCalls = 0;
-        registerGeneratedRoutes(app, {
+        const transformedInput = z.object({
+            displayName: z.string(),
+            active: z.boolean()
+        }).refine((value) => value.displayName.length > 0, "displayName is required").transform((value) => ({
+            name: value.displayName,
+            active: value.active
+        }));
+        const transformedOutput = z.object({
+            name: z.string(),
+            active: z.boolean()
+        }).transform((value) => ({
+            displayName: value.name,
+            active: value.active
+        }));
+        const pagedResultsSchema = (item) => z.object({
+            results: z.array(item),
+            next: z.string().nullable().optional(),
+            count: z.union([z.number(), z.bigint()]).transform(Number).refine((value) => Number.isSafeInteger(value) && value >= 0).nullable().optional()
+        });
+        const externalInput = z.object({
+            externalUser: z.object({ id: z.string(), role: z.string() }),
+            pagedResults: pagedResultsSchema(z.string())
+        }).transform((value) => ({
+            id: value.externalUser.id,
+            labels: value.pagedResults.results
+        }));
+        const externalOutput = z.object({
+            id: z.string(),
+            labels: z.array(z.string())
+        }).transform((value) => ({
+            externalUser: { id: value.id, role: "reader" },
+            pagedResults: { results: value.labels, count: value.labels.length }
+        }));
+        const bindings = {
+            adminUsersTransform: { input: transformedInput, output: transformedOutput },
+            adminUsersExternal: { input: externalInput, output: externalOutput }
+        };
+        const handlers = {
             adminUsersCreate(input) {
                 handlerCalls += 1;
                 if (input.score === 1.5) {
@@ -279,8 +355,26 @@ struct TypeScriptBackendGeneratedPackageTests {
             },
             adminUsersUpdate(input) {
                 return input;
+            },
+            adminUsersTransform(input) {
+                assert.equal(input.name, "Ada");
+                assert.equal(input.active, true);
+                return input;
+            },
+            adminUsersExternal(input) {
+                if (input.id === "invalid-output") {
+                    return { id: input.id, labels: [42] };
+                }
+                assert.equal(input.id, "external-1");
+                assert.deepEqual(input.labels, ["first", "second"]);
+                return input;
             }
-        });
+        };
+        assert.throws(
+            () => registerGeneratedRoutes(express(), handlers),
+            /Missing schema binding for adminUsersExternal input/
+        );
+        registerGeneratedRoutes(app, handlers, bindings);
         const server = await new Promise((resolve) => {
             const value = app.listen(0, () => resolve(value));
         });
@@ -289,6 +383,8 @@ struct TypeScriptBackendGeneratedPackageTests {
         const eventUrl = "http://127.0.0.1:" + port + "/events";
         const embeddedUrl = "http://127.0.0.1:" + port + "/embedded-events";
         const patchUrl = "http://127.0.0.1:" + port + "/users/patch";
+        const transformedUrl = "http://127.0.0.1:" + port + "/transformed-users";
+        const externalUrl = "http://127.0.0.1:" + port + "/external";
         const body = (score, id, count, attempts, magnitude = "9223372036854775807") =>
             `{"display_name":"Ada","active":true,"score":${score},"profile":{"address":{"street_name":"Main Street","verified":true,"extra":"removed"},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"},"nickname":null,"extra":"removed"},"state":"in-progress","magnitude":${magnitude},"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":${id},"count":${count},"attempts":${attempts}}`;
 
@@ -360,6 +456,36 @@ struct TypeScriptBackendGeneratedPackageTests {
         });
         assert.equal(deletedPatch.status, 200);
         assert.equal(await deletedPatch.text(), '{"display_name":{"state":"modified","value":null},"nickname":null,"labels":null}');
+
+        const transformed = await fetch(transformedUrl, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"display_name":"Ada","active":true,"private":"removed"}'
+        });
+        assert.equal(transformed.status, 200);
+        assert.equal(await transformed.text(), '{"display_name":"Ada","active":true}');
+
+        const invalidTransformed = await fetch(transformedUrl, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"display_name":"","active":true}'
+        });
+        assert.equal(invalidTransformed.status, 400);
+
+        const external = await fetch(externalUrl, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"external_user":{"id":"external-1","role":"admin","private":"removed"},"paged_results":{"results":["first","second"],"count":2,"private":"removed"},"private":"removed"}'
+        });
+        assert.equal(external.status, 200);
+        assert.equal(await external.text(), '{"external_user":{"id":"external-1","role":"reader"},"paged_results":{"results":["first","second"],"count":2}}');
+
+        const invalidExternalOutput = await fetch(externalUrl, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"external_user":{"id":"invalid-output","role":"admin"},"paged_results":{"results":["first"],"count":1}}'
+        });
+        assert.equal(invalidExternalOutput.status, 500);
 
         const malformedPatch = await fetch(patchUrl, {
             method: "PATCH",
@@ -547,28 +673,94 @@ struct TypeScriptBackendGeneratedPackageTests {
 
     private func typeFixture() -> String {
         """
-        import type { GeneratedHandlers } from "./generated/routes.js";
+        import { z } from "zod";
+        import type { GeneratedHandlers, GeneratedOperationBinding, GeneratedSchemaBindings } from "./generated/routes.js";
 
-        const validHandlers: GeneratedHandlers = {
+        type PagedResults<T> = { results: T[]; next?: string | null; count?: number | null };
+
+        const pagedResultsSchema = <T extends z.ZodTypeAny>(item: T): z.ZodType<PagedResults<z.output<T>>> => z.object({
+            results: z.array(item),
+            next: z.string().nullable().optional(),
+            count: z.number().nullable().optional()
+        });
+
+        type ExternalHandlerInput = { id: string; labels: string[] };
+        type ExternalHandlerOutput = { id: string; labels: string[] };
+        type ExternalWireOutput = { externalUser: { id: string }; pagedResults: PagedResults<string> };
+
+        type BindingContract = GeneratedSchemaBindings & {
+            adminUsersExternal: GeneratedOperationBinding<ExternalHandlerInput, ExternalHandlerOutput, ExternalWireOutput>;
+        };
+
+        const customBindings = {
+            adminUsersTransform: {
+                input: z.object({ displayName: z.string(), active: z.boolean() }).transform((value) => ({ name: value.displayName, active: value.active })),
+                output: z.object({ name: z.string(), active: z.boolean() }).transform((value) => ({ displayName: value.name, active: value.active }))
+            },
+            adminUsersExternal: {
+                input: z.object({ externalUser: z.object({ id: z.string() }), pagedResults: pagedResultsSchema(z.string()) }).transform((value) => ({ id: value.externalUser.id, labels: value.pagedResults.results })),
+                output: z.object({ id: z.string(), labels: z.array(z.string()) }).transform((value) => ({ externalUser: { id: value.id }, pagedResults: { results: value.labels, count: value.labels.length } }))
+            }
+        };
+        const typedBindings: BindingContract = customBindings;
+
+        const incompatibleExternalBinding: BindingContract = {
+            adminUsersExternal: {
+                // @ts-expect-error external binding contracts reject incompatible transformed values
+                input: z.object({ externalUser: z.object({ id: z.number() }), pagedResults: pagedResultsSchema(z.string()) }).transform((value) => ({ id: value.externalUser.id, labels: value.pagedResults.results }))
+            }
+        };
+
+        const incompatibleGenericBinding: BindingContract = {
+            adminUsersExternal: {
+                // @ts-expect-error nested generic arguments remain part of the application binding contract
+                input: z.object({ externalUser: z.object({ id: z.string() }), pagedResults: pagedResultsSchema(z.number()) }).transform((value) => ({ id: value.externalUser.id, labels: value.pagedResults.results }))
+            }
+        };
+
+        const incompatibleOutputBinding: BindingContract = {
+            adminUsersExternal: {
+                // @ts-expect-error output bindings reject incompatible generated wire values
+                output: z.object({ id: z.string(), labels: z.array(z.string()) }).transform((value) => ({ externalUser: { id: value.id }, pagedResults: { results: [42], count: 1 } }))
+            }
+        };
+
+        const validHandlers: GeneratedHandlers<typeof customBindings> = {
             adminUsersCreate: async (input) => input,
             adminUsersCreateEvent: async (input) => input,
             adminUsersCreateEmbedded: async (input) => input,
             adminUsersUpdate: async (input) => input,
+            adminUsersTransform: async (input) => ({ name: input.name, active: input.active }),
+            adminUsersExternal: async (input) => ({ id: input.id, labels: input.labels }),
         };
 
-        const incompatibleHandlers: GeneratedHandlers = {
+        const incompatibleHandlers: Pick<GeneratedHandlers, "adminUsersCreate"> = {
             // @ts-expect-error generated handlers reject incompatible output types
-            adminUsersCreate: async () => ({ displayName: "Ada", active: true, score: "not-a-number" })
+            adminUsersCreate: async () => {
+                return { displayName: "Ada", active: true, score: "not-a-number" };
+            }
         };
 
-        const incompatibleDynamicHandlers: GeneratedHandlers = {
+        const incompatibleDynamicHandlers: Pick<GeneratedHandlers, "adminUsersCreateEvent"> = {
             // @ts-expect-error generated handlers reject incompatible dynamic payload types
-            adminUsersCreateEvent: async () => ({ objectType: "message", payload: { messageText: 42 } })
+            adminUsersCreateEvent: async () => {
+                return { objectType: "message", payload: { messageText: 42 } };
+            }
+        };
+
+        // @ts-expect-error application handlers must return the binding input type
+        const incompatibleTransformHandler: GeneratedHandlers<typeof customBindings>["adminUsersTransform"] = async () => {
+            return { name: 42, active: true };
         };
 
         void validHandlers;
         void incompatibleHandlers;
         void incompatibleDynamicHandlers;
+        void incompatibleTransformHandler;
+        void typedBindings;
+        void incompatibleExternalBinding;
+        void incompatibleGenericBinding;
+        void incompatibleOutputBinding;
         """
     }
 }

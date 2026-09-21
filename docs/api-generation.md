@@ -588,12 +588,36 @@ Dynamic-object DTOs use the declared discriminator and variant raw values to sel
 
 Patch DTO properties use the built-in three-state shape: an omitted property is unchanged, `{ state: "unmodified" }` is also unchanged when supplied explicitly, and `{ state: "modified", value: ... }` assigns a value or deletes it when `value` is `null`. Generated patch routes omit unchanged properties in responses, preserve nested wire-name mappings, and keep ordinary optional fields and nullable dictionary entries separate from patch state.
 
+Application-owned refinements and transformations are supplied as a third argument to `registerGeneratedRoutes`. Each operation may provide an `input` Zod schema, which receives the generated mapped DTO after structural decoding and may transform it into the handler's application type, and an `output` Zod schema, which receives the handler's application value and must transform it into the generated DTO before wire encoding:
+
+```ts
+const bindings = {
+    adminUsersCreate: {
+        input: userDtoSchema.refine((value) => value.displayName.length > 0).transform(toDomainUser),
+        output: domainUserSchema.transform(toUserDto)
+    }
+};
+
+const handlers: GeneratedHandlers<typeof bindings> = {
+    adminUsersCreate: async (user) => saveUser(user)
+};
+
+registerGeneratedRoutes(app, handlers, bindings);
+```
+
+`GeneratedHandlers<typeof bindings>` infers the transformed handler input and return types from the schemas. Generated DTO projection still strips undeclared fields, preserves mapped names, and validates the final response. External references and generic references are emitted as `unknown` placeholders and require the relevant operation binding; missing input or output bindings fail at route registration with an actionable error. Application code can compose generic factories such as `pagedResultsSchema(itemSchema)` inside those bindings, keeping custom schemas and transformations outside generated file ownership.
+
+When an external or generic operation has a known application value shape, use the optional type parameters on `GeneratedOperationBinding<HandlerInput, HandlerOutput, WireOutput>` to make the binding contract compile-time checked. The input schema's transformed output must match `HandlerInput`, and the output schema's input and transformed output must match `HandlerOutput` and `WireOutput`; this also preserves nested generic arguments such as `PagedResults<string>`. The unparameterized form remains available for operations whose application shape is intentionally open, while runtime parsing is still required for every external or generic payload.
+
 Generate and validate the package with:
 
 ```sh
 npm install --prefix generated/backend
 npm run --prefix generated/backend build
+ROUNDTRIP_BACKEND_RUNTIME_TEST=1 swift test --filter TypeScriptBackendGeneratedPackageTests/generatedPackageCompilesAndServesItsRoute
 ```
+
+The generated-package HTTP test is opt-in because it installs the reference Express/Zod dependency environment; the command above runs the strict TypeScript build and HTTP assertions explicitly.
 
 Secured, absolute, runtime-URL, non-JSON, and bodyless operations are rejected by this first slice instead of being emitted as incomplete routes. Authentication/context, additional transports, and existing-project ownership controls are added by the later backend slices.
 

@@ -23,12 +23,31 @@ struct TypeScriptBackendOperationEmitter {
         let requestType = models.typeDeclaration(for: requestDataType)
         let responseType = models.typeDeclaration(for: responseDataType)
         return """
-        export type \(operationTypeName)Handler = (input: \(requestType)) => \(responseType) | Promise<\(responseType)>;
+        export type \(operationTypeName)Handler<Bindings extends GeneratedSchemaBindings = {}> = (input: GeneratedHandlerInput<Bindings[\"\(handlerName)\"], \(requestType)>) => GeneratedHandlerOutput<Bindings[\"\(handlerName)\"], \(responseType)>;
         """
     }
 
     func handlerField() -> String {
-        "\(handlerName): \(operationTypeName)Handler;"
+        "\(handlerName): \(operationTypeName)Handler<Bindings>;"
+    }
+
+    var requiresInputSchemaBinding: Bool {
+        operation.request.dataType?.containsBackendCustomizableType == true
+    }
+
+    var requiresOutputSchemaBinding: Bool {
+        operation.response.dataType?.containsBackendCustomizableType == true
+    }
+
+    func schemaBindingValidation() -> String {
+        var lines: [String] = []
+        if requiresInputSchemaBinding {
+            lines.append("if (!bindings?.\(handlerName)?.input) { throw new Error(\"Missing schema binding for \(handlerName) input\"); }")
+        }
+        if requiresOutputSchemaBinding {
+            lines.append("if (!bindings?.\(handlerName)?.output) { throw new Error(\"Missing schema binding for \(handlerName) output\"); }")
+        }
+        return lines.joined(separator: "\n")
     }
 
     func routeSource() -> String {
@@ -38,15 +57,17 @@ struct TypeScriptBackendOperationEmitter {
         }
         let requestName = models.typeDeclaration(for: requestType)
         let requestDecoder = models.decodeExpression(for: requestType, value: "parseJsonBody(request.body)")
-        let responseEncoder = models.encodeRootExpression(for: responseType, value: "output")
+        let responseName = models.typeDeclaration(for: responseType)
+        let responseEncoder = models.encodeRootExpression(for: responseType, value: "publicOutput")
         let path = relativePath()
         let method = operation.method.rawValue
         let status = operation.acceptableStatuses.first ?? 200
         return """
             app.\(method)(\(path.backendStringLiteral), express.raw({ type: "application/json" }), async (request, response, next) => {
-                let input: \(requestName);
+                let input: GeneratedHandlerInput<Bindings["\(handlerName)"], \(requestName)>;
                 try {
-                    input = \(requestDecoder);
+                    const decodedInput = \(requestDecoder);
+                    input = (bindings?.\(handlerName)?.input ? bindings.\(handlerName).input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["\(handlerName)"], \(requestName)>;
                 } catch {
                     response.status(400).json({ error: "Invalid request" });
                     return;
@@ -54,6 +75,7 @@ struct TypeScriptBackendOperationEmitter {
 
                 try {
                     const output = await handlers.\(handlerName)(input);
+                    const publicOutput = (bindings?.\(handlerName)?.output ? bindings.\(handlerName).output.parse(output) : output) as GeneratedWireOutput<Bindings["\(handlerName)"], \(responseName)>;
                     const body = \(responseEncoder);
                     response.status(\(status)).type("application/json").send(stringifyJsonResponse(body));
                 } catch (error) {
@@ -86,6 +108,9 @@ struct TypeScriptBackendRoutesEmitter {
         let handlers = operations.map { $0.handlerDeclaration() }.joined(separator: "\n")
         let fields = operations.map { $0.handlerField() }.joined(separator: "\n")
         let routes = operations.map { $0.routeSource() }.joined(separator: "\n")
+        let schemaBindingValidation = operations.map { $0.schemaBindingValidation() }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
         let imports = operations.flatMap { operation -> [String] in
             [operation.operation.request.dataType, operation.operation.response.dataType]
                 .compactMap(\.self)
@@ -121,13 +146,37 @@ struct TypeScriptBackendRoutesEmitter {
             \(imports)
         } from "./models.js";
 
+        export type GeneratedSchemaBinding<Output = unknown, Input = unknown> = z.ZodType<Output, Input>;
+
+        export interface GeneratedOperationBinding<HandlerInput = unknown, HandlerOutput = unknown, WireOutput = unknown> {
+            input?: GeneratedSchemaBinding<HandlerInput>;
+            output?: GeneratedSchemaBinding<WireOutput, HandlerOutput>;
+        }
+
+        export interface GeneratedSchemaBindings {
+        \(operations.map { "    \($0.handlerName)?: GeneratedOperationBinding;" }.joined(separator: "\n"))
+        }
+
+        export type GeneratedHandlerInput<Binding, Default> = Binding extends { input?: infer Schema }
+            ? NonNullable<Schema> extends z.ZodTypeAny ? z.output<NonNullable<Schema>> : Default
+            : Default;
+
+        export type GeneratedHandlerOutput<Binding, Default> = Binding extends { output?: infer Schema }
+            ? NonNullable<Schema> extends z.ZodTypeAny ? z.input<NonNullable<Schema>> | Promise<z.input<NonNullable<Schema>>> : Default | Promise<Default>
+            : Default | Promise<Default>;
+
+        export type GeneratedWireOutput<Binding, Default> = Binding extends { output?: infer Schema }
+            ? NonNullable<Schema> extends z.ZodTypeAny ? z.output<NonNullable<Schema>> : Default
+            : Default;
+
         \(handlers)
 
-        export interface GeneratedHandlers {
+        export interface GeneratedHandlers<Bindings extends GeneratedSchemaBindings = {}> {
         \(fields.prepad())
         }
 
-        export function registerGeneratedRoutes(app: Express, handlers: GeneratedHandlers): void {
+        export function registerGeneratedRoutes<Bindings extends GeneratedSchemaBindings = {}>(app: Express, handlers: GeneratedHandlers<Bindings>, bindings?: Bindings): void {
+        \(schemaBindingValidation.prepad())
         \(routes.prepad())
         }
         """
@@ -135,12 +184,8 @@ struct TypeScriptBackendRoutesEmitter {
 
     private func codecImports(for dataType: ApiTypeSchema) -> [String]? {
         switch dataType {
-            case let .reference(typeName, _, _, _, dataType):
-                dataType.map(codecImports(for:)) ?? [
-                    "decode\(typeName.backendTypeName)",
-                    "encode\(typeName.backendTypeName)",
-                    "type \(typeName.backendTypeName)"
-                ]
+            case let .reference(_, _, _, _, dataType):
+                dataType.map(codecImports(for:)) ?? []
             case let .object(typeName, _, _, _, _, _),
                  let .stringEnum(typeName, _, _, _, _),
                  let .intEnum(typeName, _, _, _),

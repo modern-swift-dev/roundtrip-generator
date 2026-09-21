@@ -28,6 +28,24 @@ struct TypeScriptBackendModelEmitter {
             uint8ArrayToBase64
         } from "./runtime.js";
 
+        export interface PagedResults<T> {
+            results: T[];
+            next?: string | null;
+            count?: number | null;
+        }
+
+        export function PagedResultsWireSchema<T extends z.ZodTypeAny>(itemSchema: T) {
+            return z.object({
+                results: z.array(itemSchema),
+                next: z.string().nullable().optional(),
+                count: z.union([z.number(), z.bigint()])
+                    .transform((value) => Number(value))
+                    .refine((value) => Number.isSafeInteger(value) && value >= 0)
+                    .nullable()
+                    .optional()
+            });
+        }
+
         \(declarations)
         """
     }
@@ -307,13 +325,15 @@ struct TypeScriptBackendModelEmitter {
                  let .intEnum(typeName, _, _, _),
                  let .dynamicObject(typeName, _, _, _, _, _, _, _, _):
                 typeName.backendTypeName
-            case let .reference(typeName, _, _, _, dataType):
-                dataType.map(typeDeclaration(for:)) ?? typeName.backendTypeName
+            case let .reference(_, _, _, _, dataType):
+                dataType.map(typeDeclaration(for:)) ?? "unknown"
             case let .genericReference(typeName, types):
                 if typeName == "PatchableValue", let valueType = types.first {
                     "{ state: \"unmodified\" } | { state: \"modified\"; value: \(typeDeclaration(for: valueType)) | null }"
+                } else if typeName == "PagedResults", let valueType = types.first {
+                    "PagedResults<\(typeDeclaration(for: valueType))>"
                 } else {
-                    typeName.backendTypeName
+                    "unknown"
                 }
         }
     }
@@ -362,13 +382,15 @@ struct TypeScriptBackendModelEmitter {
                  let .intEnum(typeName, _, _, _),
                  let .dynamicObject(typeName, _, _, _, _, _, _, _, _):
                 return "\(typeName.backendTypeName)WireSchema()"
-            case let .reference(typeName, _, _, _, dataType):
-                return dataType.map(schemaExpression(for:)) ?? "\(typeName.backendTypeName)WireSchema()"
+            case let .reference(_, _, _, _, dataType):
+                return dataType.map(schemaExpression(for:)) ?? "z.unknown()"
             case let .genericReference(typeName, types):
                 if typeName == "PatchableValue", let valueType = types.first {
                     return "z.discriminatedUnion(\"state\", [z.object({ state: z.literal(\"unmodified\") }), z.object({ state: z.literal(\"modified\"), value: \(schemaExpression(for: valueType)).nullable() })])"
+                } else if typeName == "PagedResults", let valueType = types.first {
+                    return "PagedResultsWireSchema(\(schemaExpression(for: valueType)))"
                 }
-                return "\(typeName.backendTypeName)WireSchema()"
+                return "z.unknown()"
         }
     }
 
@@ -408,13 +430,16 @@ struct TypeScriptBackendModelEmitter {
                  let .intEnum(typeName, _, _, _),
                  let .dynamicObject(typeName, _, _, _, _, _, _, _, _):
                 expression = "decode\(typeName.backendTypeName)(\(value))"
-            case let .reference(typeName, _, _, _, dataType):
-                expression = dataType.map { decodeExpression(for: $0, value: value) } ?? "decode\(typeName.backendTypeName)(\(value))"
+            case let .reference(_, _, _, _, dataType):
+                expression = dataType.map { decodeExpression(for: $0, value: value) } ?? "\(value) as unknown"
             case let .genericReference(typeName, types):
                 if typeName == "PatchableValue", let valueType = types.first {
                     let patch = "(\(schemaExpression(for: dataType)).parse(\(value)) as { state: \"unmodified\" } | { state: \"modified\"; value: unknown })"
                     let decodedValue = "patch.value == null ? null : \(decodeExpression(for: valueType, value: "patch.value"))"
                     expression = "(() => { const patch = \(patch); if (patch.state === \"unmodified\") return { state: \"unmodified\" }; return { state: \"modified\", value: \(decodedValue) }; })()"
+                } else if typeName == "PagedResults", let valueType = types.first {
+                    let decodedItem = decodeExpression(for: valueType, value: "item")
+                    expression = "(() => { const pagedResultsObject = \(schemaExpression(for: dataType)).parse(\(value)) as { results: unknown[]; next?: string | null; count?: number | null }; return { results: pagedResultsObject.results.map((item) => \(decodedItem)), next: pagedResultsObject.next, count: pagedResultsObject.count }; })()"
                 } else {
                     expression = "\(value) as \(typeDeclaration(for: dataType))"
                 }
@@ -442,14 +467,20 @@ struct TypeScriptBackendModelEmitter {
                  let .intEnum(typeName, _, _, _),
                  let .dynamicObject(typeName, _, _, _, _, _, _, _, _):
                 return "encode\(typeName.backendTypeName)(\(value))"
-            case let .reference(typeName, _, _, _, dataType):
-                return dataType.map { encodeExpression(for: $0, value: value) } ?? "encode\(typeName.backendTypeName)(\(value))"
+            case let .reference(_, _, _, _, dataType):
+                return dataType.map { encodeExpression(for: $0, value: value) } ?? value
             case let .genericReference(typeName, types) where typeName == "PatchableValue":
                 guard let valueType = types.first else {
                     return value
                 }
                 let encodedValue = encodeExpression(for: valueType, value: "\(value).value")
                 return "(\(value).state === \"unmodified\" ? \(value) : { state: \"modified\", value: \(value).value == null ? null : \(encodedValue) })"
+            case let .genericReference(typeName, types) where typeName == "PagedResults":
+                guard let valueType = types.first else {
+                    return value
+                }
+                let encodedItem = encodeExpression(for: valueType, value: "item")
+                return "PagedResultsWireSchema(\(schemaExpression(for: valueType))).parse({ results: \(value).results.map((item) => \(encodedItem)), next: \(value).next, count: \(value).count })"
             default:
                 return value
         }
