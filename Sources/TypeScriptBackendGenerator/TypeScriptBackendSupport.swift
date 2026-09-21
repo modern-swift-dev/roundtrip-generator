@@ -208,6 +208,39 @@ extension ApiTypeSchema {
 
 extension ApiOperation {
     var backendDataTypes: [ApiTypeSchema] {
-        [request.dataType, response.dataType].compactMap(\.self)
+        [request.dataType, response.dataType]
+            .compactMap(\.self)
+            + expandedParameters.compactMap(\.dataType.backendDataType)
     }
+}
+
+extension ApiParameter.DataType {
+    var backendDataType: ApiTypeSchema? {
+        switch self {
+            case let .stringEnumValue(type, _),
+                 let .stringEnumArray(type, _),
+                 let .intEnumValue(type, _),
+                 let .intEnumArray(type, _):
+                type
+            default:
+                nil
+        }
+    }
+
+    var arrayItemDataType: ApiParameter.DataType {
+        switch self {
+            case .boolArray: .bool()
+            case .stringArray: .string()
+            case .intArray: .int()
+            case .int16Array: .int16()
+            case .int32Array: .int32()
+            case .int64Array: .int64()
+            case .uintArray: .uint()
+            case .uint16Array: .uint16()
+            case .uint32Array: .uint32()
+            case .uint64Array: .uint64()
+            default: self
+        }
+    }
+
 }

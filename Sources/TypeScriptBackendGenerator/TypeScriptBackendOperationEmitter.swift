@@ -1,3 +1,4 @@
+import Foundation
 import GeneratorBuilder
 import GeneratorModels
 
@@ -18,7 +19,9 @@ struct TypeScriptBackendOperationEmitter {
     func handlerDeclaration() -> String {
         let requestType = handlerRequestType()
         let responseType = handlerResponseType()
+        let inputDeclaration = parameterInputDeclaration()
         return """
+        \(inputDeclaration)
         export type \(operationTypeName)Handler<Bindings extends GeneratedSchemaBindings = {}> = (input: GeneratedHandlerInput<Bindings[\"\(handlerName)\"], \(requestType)>) => GeneratedHandlerOutput<Bindings[\"\(handlerName)\"], \(responseType)>;
         """
     }
@@ -76,7 +79,10 @@ struct TypeScriptBackendOperationEmitter {
     }
 
     private func handlerRequestType() -> String {
-        switch operation.request {
+        if !operation.expandedParameters.isEmpty {
+            return "\(operationTypeName)Input"
+        }
+        return switch operation.request {
             case .none:
                 "void"
             case .binary,
@@ -116,6 +122,9 @@ struct TypeScriptBackendOperationEmitter {
     }
 
     private func requestDecodeLines() -> String {
+        if !operation.expandedParameters.isEmpty {
+            return parameterizedRequestDecodeLines()
+        }
         switch operation.request {
             case .none:
                 return "input = undefined as GeneratedHandlerInput<Bindings[\"\(handlerName)\"], void>;"
@@ -180,11 +189,223 @@ struct TypeScriptBackendOperationEmitter {
         }
     }
 
+    private func parameterInputDeclaration() -> String {
+        guard !operation.expandedParameters.isEmpty else {
+            return ""
+        }
+        var properties = operation.expandedParameters.map { parameter in
+            let optional = parameter.isRequired ? "" : "?"
+            return "    \(parameter.propertyName.backendPropertyName)\(optional): \(parameterTypeDeclaration(for: parameter.dataType));"
+        }
+        if hasRequestBody {
+            properties.append("    body: \(handlerBodyType());")
+        }
+        return """
+        export interface \(operationTypeName)Input {
+        \(properties.joined(separator: "\n"))
+        }
+        """
+    }
+
+    private func parameterizedRequestDecodeLines() -> String {
+        let parameterLines = operation.expandedParameters.map(parameterDecodeLines).joined(separator: "\n")
+        let bodyLines: String = switch operation.request {
+            case let .json(dataType):
+                dataType.map {
+                    "const body = \(models.decodeExpression(for: $0, value: "parseJsonBody(request.body)"));"
+                } ?? ""
+            case .binary,
+                 .file:
+                """
+                if (!(request.body instanceof Uint8Array)) {
+                    throw new Error("Invalid raw request body");
+                }
+                const body = request.body;
+                """
+            case .none,
+                 .multiPart:
+                ""
+        }
+        var fields = operation.expandedParameters.map { parameter in
+            "\(parameter.propertyName.backendPropertyName): parsed_\(parameterVariableName(parameter)),"
+        }
+        if hasRequestBody {
+            fields.append("body,")
+        }
+        let decodedInput = "const decodedInput = {\n\(fields.joined(separator: "\n").prepad())\n};"
+        return """
+        \(parameterLines)
+        \(bodyLines)
+        \(decodedInput)
+        input = (bindings?.\(handlerName)?.input ? bindings.\(handlerName).input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings[\"\(handlerName)\"], \(handlerRequestType())>;
+        """
+    }
+
+    private func parameterDecodeLines(_ parameter: ApiParameter) -> String {
+        let variable = parameterVariableName(parameter)
+        let raw = "raw_\(variable)"
+        let parsed = parameterValueExpression(parameter, value: raw, required: parameter.isRequired)
+        return """
+        const \(raw) = readRequestParameter(request, \(parameter.location.rawValue.backendStringLiteral), \(parameter.rawName.backendStringLiteral));
+        const parsed_\(variable) = \(parsed);
+        """
+    }
+
+    private func parameterValueExpression(_ parameter: ApiParameter, value: String, required: Bool) -> String {
+        parameterValueExpression(dataType: parameter.dataType, name: parameter.rawName, value: value, required: required)
+    }
+
+    private func parameterValueExpression(
+        dataType: ApiParameter.DataType,
+        name: String,
+        value: String,
+        required: Bool,
+    ) -> String {
+        let requiredLiteral = required ? "true" : "false"
+        switch dataType {
+            case .bool:
+                return "parseParameterBoolean(\(value), \(name.backendStringLiteral), \(requiredLiteral))"
+            case .string:
+                return "parseParameterString(\(value), \(name.backendStringLiteral), \(requiredLiteral))"
+            case .int,
+                 .int64,
+                 .uint,
+                 .uint64:
+                return "parseParameterBigInt(\(value), \(name.backendStringLiteral), \(requiredLiteral), \(bigIntLiteral(for: dataType, minimum: true)), \(bigIntLiteral(for: dataType, minimum: false)))"
+            case .int16,
+                 .int32,
+                 .uint16,
+                 .uint32:
+                let bounds = narrowBounds(for: dataType)
+                return "parseParameterNarrowInteger(\(value), \(name.backendStringLiteral), \(requiredLiteral), \(bounds.minimum), \(bounds.maximum))"
+            case .dateTime:
+                return "parseParameterDateTime(\(value), \(name.backendStringLiteral), \(requiredLiteral))"
+            case .date:
+                return "parseParameterDate(\(value), \(name.backendStringLiteral), \(requiredLiteral))"
+            case .time:
+                return "parseParameterTime(\(value), \(name.backendStringLiteral), \(requiredLiteral))"
+            case .boolArray,
+                 .stringArray,
+                 .intArray,
+                 .int16Array,
+                 .int32Array,
+                 .int64Array,
+                 .uintArray,
+                 .uint16Array,
+                 .uint32Array,
+                 .uint64Array:
+                let item = parameterValueExpression(dataType: dataType.arrayItemDataType, name: name, value: "item", required: true)
+                return "parseParameterArray(\(value), \(name.backendStringLiteral), \(requiredLiteral))?.map((item) => \(item))"
+            case let .stringEnumValue(type, _):
+                let parsed = parameterValueExpression(dataType: .string(), name: name, value: value, required: required)
+                return required ? "decode\(enumTypeName(type))(\(parsed))" : "(() => { const value = \(parsed); return value === undefined ? undefined : decode\(enumTypeName(type))(value); })()"
+            case let .stringEnumArray(type, _):
+                return "parseParameterArray(\(value), \(name.backendStringLiteral), \(requiredLiteral))?.map((item) => decode\(enumTypeName(type))(item))"
+            case let .intEnumValue(type, _):
+                let parsed = "parseParameterInteger(\(value), \(name.backendStringLiteral), \(requiredLiteral))"
+                return required ? "decode\(enumTypeName(type))(\(parsed))" : "(() => { const value = \(parsed); return value === undefined ? undefined : decode\(enumTypeName(type))(value); })()"
+            case let .intEnumArray(type, _):
+                return "parseParameterArray(\(value), \(name.backendStringLiteral), \(requiredLiteral))?.map((item) => decode\(enumTypeName(type))(parseParameterInteger(item, \(name.backendStringLiteral), true)))"
+        }
+    }
+
+    private func parameterTypeDeclaration(for dataType: ApiParameter.DataType) -> String {
+        switch dataType {
+            case .bool: "boolean"
+            case .boolArray: "boolean[]"
+            case .string,
+                 .date,
+                 .time: "string"
+            case .stringArray: "string[]"
+            case .dateTime: "Date"
+            case .int,
+                 .int64,
+                 .uint,
+                 .uint64: "bigint"
+            case .int16,
+                 .int32,
+                 .uint16,
+                 .uint32: "number"
+            case .intArray,
+                 .int64Array,
+                 .uintArray,
+                 .uint64Array: "bigint[]"
+            case .int16Array,
+                 .int32Array,
+                 .uint16Array,
+                 .uint32Array: "number[]"
+            case let .stringEnumValue(type, _),
+                 let .intEnumValue(type, _): models.typeDeclaration(for: type)
+            case let .stringEnumArray(type, _),
+                 let .intEnumArray(type, _): "\(models.typeDeclaration(for: type))[]"
+        }
+    }
+
+    private func handlerBodyType() -> String {
+        switch operation.request {
+            case .none: "never"
+            case .binary,
+                 .file: "Uint8Array"
+            case let .json(dataType): dataType.map { models.typeDeclaration(for: $0) } ?? "never"
+            case .multiPart: "unknown"
+        }
+    }
+
+    private var hasRequestBody: Bool {
+        switch operation.request {
+            case .none: false
+            case .json,
+                 .binary,
+                 .file,
+                 .multiPart: true
+        }
+    }
+
+    private func parameterVariableName(_ parameter: ApiParameter) -> String {
+        parameter.propertyName.backendPropertyName
+    }
+
+    private func enumTypeName(_ type: ApiTypeSchema) -> String {
+        switch type {
+            case let .stringEnum(typeName, _, _, _, _),
+                 let .intEnum(typeName, _, _, _): typeName.backendTypeName
+            case let .reference(_, _, _, _, resolved): resolved.map(enumTypeName) ?? type.backendDeclaredTypeName?.backendTypeName ?? "UnknownEnum"
+            default: type.backendDeclaredTypeName?.backendTypeName ?? "UnknownEnum"
+        }
+    }
+
+    private func bigIntLiteral(for dataType: ApiParameter.DataType, minimum: Bool) -> String {
+        switch dataType {
+            case .uint,
+                 .uint64: minimum ? "0n" : "18446744073709551615n"
+            default: minimum ? "-9223372036854775808n" : "9223372036854775807n"
+        }
+    }
+
+    private func narrowBounds(for dataType: ApiParameter.DataType) -> (minimum: String, maximum: String) {
+        switch dataType {
+            case .int16,
+                 .int16Array: ("-32768", "32767")
+            case .int32,
+                 .int32Array: ("-2147483648", "2147483647")
+            case .uint16,
+                 .uint16Array: ("0", "65535")
+            case .uint32,
+                 .uint32Array: ("0", "4294967295")
+            default: ("0", "0")
+        }
+    }
+
     private func relativePath() -> String {
         guard case let .relative(path) = operation.path else {
             return "/"
         }
-        return path.hasPrefix("/") ? path : "/\(path)"
+        let normalizedPath = path.hasPrefix("/") ? path : "/\(path)"
+        return operation.expandedParameters
+            .filter { $0.location == .path }
+            .reduce(normalizedPath) { result, parameter in
+                result.replacingOccurrences(of: "{\(parameter.rawName)}", with: ":\(parameter.rawName)")
+            }
     }
 }
 
@@ -206,14 +427,15 @@ struct TypeScriptBackendRoutesEmitter {
         let schemaBindingValidation = operations.map { $0.schemaBindingValidation() }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
-        let imports = operations.flatMap { operation -> [String] in
+        let importedDataTypes = operations.flatMap { operation in
             [operation.operation.request.dataType, operation.operation.response.dataType]
                 .compactMap(\.self)
-                .flatMap { codecImports(for: $0) ?? [] }
+                + operation.operation.expandedParameters.compactMap(\.dataType.backendDataType)
         }
-        .uniqued()
-        .sorted()
-        .joined(separator: ",\n    ")
+        let imports = importedDataTypes.flatMap { codecImports(for: $0) ?? [] }
+            .uniqued()
+            .sorted()
+            .joined(separator: ",\n    ")
         return """
         // Generated code. Do not edit.
 
@@ -227,11 +449,21 @@ struct TypeScriptBackendRoutesEmitter {
             isValidLocalTime,
             isValidURL,
             isValidUUID,
+            parseParameterArray,
+            parseParameterBigInt,
+            parseParameterBoolean,
+            parseParameterDate,
+            parseParameterDateTime,
+            parseParameterInteger,
+            parseParameterNarrowInteger,
+            parseParameterString,
+            parseParameterTime,
             parseDate,
             parseDouble,
             parseJsonBody,
             parseNarrowInteger,
             parseURL,
+            readRequestParameter,
             generatedResponseHasBody,
             normalizeGeneratedResponse,
             serializeDate,

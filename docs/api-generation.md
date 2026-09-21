@@ -576,6 +576,8 @@ registerGeneratedRoutes(app, {
 });
 ```
 
+Operations with declared route parameters receive a typed input object containing each mapped parameter property and, when present, a `body` property. Path, query, header, and cookie values are read using their declared wire names; header lookup is case-insensitive and percent-encoded cookie values are decoded once. Required values, scalar ranges, booleans, dates, times, enums, and comma-separated arrays are validated before the handler runs. Query, header, and cookie arrays use the same comma-separated encoding as the generated Swift client: an empty string is an empty array, an omitted optional value is `undefined`, and commas inside string elements are therefore not distinguishable from separators. Swift client initializer defaults are not applied when an HTTP parameter is omitted; only the declared requiredness controls whether omission is rejected or yields `undefined`.
+
 Generated routes use `express.raw({ type: "application/json" })` and the generated `lossless-json` runtime so wide integer fields remain exact JSON numbers. Register the generated routes before installing a broad `app.use(express.json())` middleware; an earlier ordinary JSON parser would already have rounded wide integers. Narrow integer fields are range-checked before conversion to `number`.
 
 Mapped scalar fields use `Date` for ISO-8601 instants, `URL` for valid URL strings, and `Uint8Array` for padded base64 JSON values. UUIDs, `YYYY-MM-DD` calendar dates, and local `HH:mm:ss` values remain strings; invalid scalar formats are rejected at the generated route boundary. Raw binary request/response transport is a separate capability.

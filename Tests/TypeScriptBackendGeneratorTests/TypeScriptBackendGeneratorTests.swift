@@ -121,6 +121,66 @@ struct TypeScriptBackendGeneratorTests {
         #expect(routes.contains("response.status(output.status).end()"))
     }
 
+    @Test func generatedBackendBindsTypedRouteParameters() throws {
+        let payload = ApiTypeSchema.object(typeName: "Payload", properties: [.string("message")])
+        let state = ApiTypeSchema.stringEnum(
+            typeName: "State",
+            values: [(name: "ready", rawName: "ready")],
+        )
+        let operation = ApiOperation(
+            name: "inspect",
+            method: .post,
+            path: .relative("/users/{user_id}"),
+            security: .unsecured,
+            parameters: [
+                .path("user_id", .int64(), propertyName: "userId"),
+                .query("include_tags", .stringArray(), propertyName: "includeTags", required: false),
+                .query("page_size", .int16(50), propertyName: "pageSize").optional,
+                .query("state", .stringEnumValue(type: state.asRef), propertyName: "state"),
+                .header("X-Trace", .string(), propertyName: "trace"),
+                .cookie("session_id", .string(), propertyName: "sessionId")
+            ],
+            request: .json(payload.asRef),
+            response: .json(payload.asRef),
+            acceptableStatuses: [200],
+            extraImports: [],
+        )
+        let files = try TypeScriptBackendApiPackageGenerator(
+            package: testPackage(operation: operation, references: [payload, state]),
+        ).generatedFiles()
+        let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+
+        #expect(routes.contains("app.post(\"/users/:user_id\""))
+        #expect(routes.contains("export interface AdminUsersInspectInput"))
+        #expect(routes.contains("userId: bigint;"))
+        #expect(routes.contains("includeTags?: string[];"))
+        #expect(routes.contains("pageSize?: number;"))
+        #expect(!routes.contains("raw_pageSize === undefined ? 50"))
+        #expect(routes.contains("body: Payload;"))
+        #expect(routes.contains("readRequestParameter(request, \"header\", \"X-Trace\")"))
+        #expect(routes.contains("parseParameterBigInt"))
+        #expect(routes.contains("decodeState"))
+    }
+
+    @Test func generatedBackendRejectsInvalidParameterEnumDefaults() {
+        let state = ApiTypeSchema.stringEnum(
+            typeName: "State",
+            values: [(name: "ready", rawName: "ready")],
+        )
+        let operation = ApiOperation.get(
+            name: "inspect",
+            path: .relative("/users"),
+            security: .unsecured,
+            parameters: [.query("state", .stringEnumValue(type: state.asRef, defaultValue: "unknown"))],
+        )
+
+        #expect(throws: TypeScriptBackendGeneratorError.invalidPackage(reason: "operation Inspect has an invalid enum parameter default")) {
+            try TypeScriptBackendApiPackageGenerator(
+                package: testPackage(operation: operation, references: [state]),
+            ).generatedFiles()
+        }
+    }
+
     @Test func generatedBackendExposesApplicationSchemaBindings() throws {
         let external = ApiTypeSchema.reference(typeName: "ExternalUser", strict: false)
         let envelope = ApiTypeSchema.object(

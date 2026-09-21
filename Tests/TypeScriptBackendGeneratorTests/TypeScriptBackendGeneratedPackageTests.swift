@@ -259,6 +259,98 @@ struct TypeScriptBackendGeneratedPackageTests {
         try run(["exec", "--", "node", "test.mjs"], in: root)
     }
 
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
+    func generatedPackageBindsRouteParametersOverHTTP() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let observed = ApiTypeSchema.object(
+            typeName: "Observed",
+            properties: [
+                .string("user_id", propertyName: "userId"),
+                .array("tags", of: .string()),
+                .string("state"),
+                .string("magnitude"),
+                .array("flags", of: .bool()),
+                .array("integers", of: .string()),
+                .array("states", of: .string()),
+                .array("magnitudes", of: .string()),
+                .string("trace"),
+                .string("session"),
+                .string("when"),
+                .string("date"),
+                .string("time"),
+                .int32("limit"),
+                .int32("small"),
+                .bool("enabled")
+            ],
+        )
+        let state = ApiTypeSchema.stringEnum(
+            typeName: "State",
+            values: [(name: "ready", rawName: "ready")],
+        )
+        let magnitude = ApiTypeSchema.intEnum(
+            typeName: "Magnitude",
+            values: [
+                (name: "small", rawValue: 1),
+                (name: "maximum", rawValue: 9_223_372_036_854_775_807)
+            ],
+        )
+        let operation = ApiOperation(
+            name: "inspect",
+            method: .get,
+            path: .relative("/users/{user_id}"),
+            security: .unsecured,
+            parameters: [
+                .path("user_id", .int64(), propertyName: "userId"),
+                .query("include_tags", .stringArray(), propertyName: "includeTags", required: false),
+                .query("state", .stringEnumValue(type: state.asRef), propertyName: "state"),
+                .query("magnitude", .intEnumValue(type: magnitude.asRef), propertyName: "magnitude"),
+                .query("flags", .boolArray(), propertyName: "flags"),
+                .query("integers", .int64Array(), propertyName: "integers"),
+                .query("states", .stringEnumArray(type: state.asRef), propertyName: "states"),
+                .query("magnitudes", .intEnumArray(type: magnitude.asRef), propertyName: "magnitudes"),
+                .query("when", .dateTime, propertyName: "when"),
+                .query("date", .date, propertyName: "date"),
+                .query("time", .time, propertyName: "time"),
+                .query("limit", .int32(), propertyName: "limit"),
+                .query("small", .uint16(), propertyName: "small"),
+                .header("X-Trace", .string(), propertyName: "trace"),
+                .header("X-Enabled", .bool(), propertyName: "enabled"),
+                .cookie("session_id", .string(), propertyName: "sessionId")
+            ],
+            request: .none,
+            response: .json(observed.asRef),
+            acceptableStatuses: [200],
+            extraImports: [],
+        )
+        let escapedPathOperation = ApiOperation(
+            name: "inspectFile",
+            method: .get,
+            path: .relative("/files/{file_name}"),
+            security: .unsecured,
+            parameters: [.path("file_name", .string(), propertyName: "fileName")],
+            request: .none,
+            response: .json(.string()),
+            acceptableStatuses: [200],
+            extraImports: [],
+        )
+        let package = ApiPackage(
+            name: "ParameterExample",
+            targetDirUrl: root,
+            modules: [ApiModule(name: "Admin", definitions: [ApiService(name: "Users", operations: [operation, escapedPathOperation], references: [observed, state, magnitude])])],
+        )
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for file in try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles() {
+            try file.write(to: root)
+        }
+        try parameterRuntimeTest().write(to: root.appendingPathComponent("test.mjs"), atomically: true, encoding: .utf8)
+
+        try run(["install", "--ignore-scripts", "--package-lock=false"], in: root)
+        try run(["run", "build"], in: root)
+        try run(["exec", "--", "node", "test.mjs"], in: root)
+    }
+
     private func run(_ arguments: [String], in directory: URL) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -324,6 +416,128 @@ struct TypeScriptBackendGeneratedPackageTests {
             assert.equal(health.status, 204);
             assert.equal(health.headers.get("x-health"), "ok");
             assert.equal(await health.text(), "");
+        } finally {
+            await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        }
+        """
+    }
+
+    private func parameterRuntimeTest() -> String {
+        """
+        import assert from "node:assert/strict";
+        import express from "express";
+        import { registerGeneratedRoutes } from "./dist/generated/routes.js";
+
+        const app = express();
+        let handlerCalls = 0;
+        const handlers = {
+            adminUsersInspect: async (input) => {
+                handlerCalls += 1;
+                return {
+                    userId: input.userId.toString(),
+                    tags: input.includeTags ?? [],
+                    state: input.state,
+                    magnitude: input.magnitude.toString(),
+                    flags: input.flags,
+                    integers: input.integers.map((value) => value.toString()),
+                    states: input.states,
+                    magnitudes: input.magnitudes.map((value) => value.toString()),
+                    trace: input.trace,
+                    session: input.sessionId,
+                    when: input.when.toISOString(),
+                    date: input.date,
+                    time: input.time,
+                    limit: input.limit,
+                    small: input.small,
+                    enabled: input.enabled
+                };
+            },
+            adminUsersInspectFile: async (input) => input.fileName
+        };
+        registerGeneratedRoutes(app, handlers);
+        const server = app.listen(0);
+        await new Promise((resolve) => server.once("listening", resolve));
+        try {
+            const address = server.address();
+            const response = await fetch(`http://127.0.0.1:${address.port}/users/9223372036854775807?include_tags=alpha%2Cbeta,gamma&state=ready&magnitude=9223372036854775807&flags=true,false&integers=-9223372036854775808,9223372036854775807&states=ready,ready&magnitudes=1,9223372036854775807&when=2026-09-21T12:34:56Z&date=2026-09-21&time=12:34:56.789&limit=32767&small=65535`, {
+                headers: {
+                    "x-trace": "trace-value",
+                    "x-enabled": "true",
+                    "cookie": "session_id=session%20value%2C1"
+                }
+            });
+            assert.equal(response.status, 200);
+            assert.deepEqual(await response.json(), {
+                user_id: "9223372036854775807",
+                tags: ["alpha", "beta", "gamma"],
+                state: "ready",
+                magnitude: "9223372036854775807",
+                flags: [true, false],
+                integers: ["-9223372036854775808", "9223372036854775807"],
+                states: ["ready", "ready"],
+                magnitudes: ["1", "9223372036854775807"],
+                trace: "trace-value",
+                session: "session value,1",
+                when: "2026-09-21T12:34:56.000Z",
+                date: "2026-09-21",
+                time: "12:34:56.789",
+                limit: 32767,
+                small: 65535,
+                enabled: true
+            });
+
+            const escapedPath = await fetch(`http://127.0.0.1:${address.port}/files/alpha%20beta`);
+            const escapedPathBody = await escapedPath.text();
+            assert.equal(escapedPath.status, 200, escapedPathBody);
+            assert.equal(JSON.parse(escapedPathBody), "alpha beta");
+
+            const emptyArray = await fetch(`http://127.0.0.1:${address.port}/users/1?include_tags=&state=ready&magnitude=9223372036854775807&flags=true,false&integers=1&states=ready&magnitudes=1&when=2026-09-21T12:34:56Z&date=2026-09-21&time=12:34:56&limit=1&small=1`, {
+                headers: { "x-trace": "trace-value", "x-enabled": "true", "cookie": "session_id=session" }
+            });
+            assert.equal(emptyArray.status, 200);
+            assert.deepEqual((await emptyArray.json()).tags, []);
+
+            const omittedArray = await fetch(`http://127.0.0.1:${address.port}/users/1?state=ready&magnitude=9223372036854775807&flags=true,false&integers=1&states=ready&magnitudes=1&when=2026-09-21T12:34:56Z&date=2026-09-21&time=12:34:56&limit=1&small=1`, {
+                headers: { "x-trace": "trace-value", "x-enabled": "true", "cookie": "session_id=session" }
+            });
+            assert.equal(omittedArray.status, 200);
+            assert.deepEqual((await omittedArray.json()).tags, []);
+
+            const invalidWideInteger = await fetch(`http://127.0.0.1:${address.port}/users/9223372036854775808?state=ready&magnitude=9223372036854775807&flags=true,false&integers=1&states=ready&magnitudes=1&when=2026-09-21T12:34:56Z&date=2026-09-21&time=12:34:56&limit=1&small=1`, {
+                headers: { "x-trace": "trace-value", "x-enabled": "true", "cookie": "session_id=session" }
+            });
+            assert.equal(invalidWideInteger.status, 400);
+
+            const missingRequired = await fetch(`http://127.0.0.1:${address.port}/users/1?magnitude=9223372036854775807&flags=true,false&integers=1&states=ready&magnitudes=1&when=2026-09-21T12:34:56Z&date=2026-09-21&time=12:34:56&limit=1&small=1`, {
+                headers: { "x-trace": "trace-value", "x-enabled": "true", "cookie": "session_id=session" }
+            });
+            assert.equal(missingRequired.status, 400);
+
+            const invalidBoolean = await fetch(`http://127.0.0.1:${address.port}/users/1?state=ready&magnitude=9223372036854775807&flags=true,false&integers=1&states=ready&magnitudes=1&when=2026-09-21T12:34:56Z&date=2026-09-21&time=12:34:56&limit=1&small=1`, {
+                headers: { "x-trace": "trace-value", "x-enabled": "not-a-boolean", "cookie": "session_id=session" }
+            });
+            assert.equal(invalidBoolean.status, 400);
+
+            const invalidNarrowInteger = await fetch(`http://127.0.0.1:${address.port}/users/1?state=ready&magnitude=9223372036854775807&flags=true,false&integers=1&states=ready&magnitudes=1&when=2026-09-21T12:34:56Z&date=2026-09-21&time=12:34:56&limit=1&small=65536`, {
+                headers: { "x-trace": "trace-value", "x-enabled": "true", "cookie": "session_id=session" }
+            });
+            assert.equal(invalidNarrowInteger.status, 400);
+
+            const invalidDate = await fetch(`http://127.0.0.1:${address.port}/users/1?state=ready&magnitude=9223372036854775807&flags=true,false&integers=1&states=ready&magnitudes=1&when=2026-09-21T12:34:56Z&date=2026-02-30&time=12:34:56&limit=1&small=1`, {
+                headers: { "x-trace": "trace-value", "x-enabled": "true", "cookie": "session_id=session" }
+            });
+            assert.equal(invalidDate.status, 400);
+
+            const invalidTime = await fetch(`http://127.0.0.1:${address.port}/users/1?state=ready&magnitude=9223372036854775807&flags=true,false&integers=1&states=ready&magnitudes=1&when=2026-09-21T12:34:56Z&date=2026-09-21&time=25:34:56&limit=1&small=1`, {
+                headers: { "x-trace": "trace-value", "x-enabled": "true", "cookie": "session_id=session" }
+            });
+            assert.equal(invalidTime.status, 400);
+
+            const invalidEnum = await fetch(`http://127.0.0.1:${address.port}/users/1?state=unknown&magnitude=9223372036854775807&flags=true,false&integers=1&states=ready&magnitudes=1&when=2026-09-21T12:34:56Z&date=2026-09-21&time=12:34:56&limit=1&small=1`, {
+                headers: { "x-trace": "trace-value", "x-enabled": "true", "cookie": "session_id=session" }
+            });
+            assert.equal(invalidEnum.status, 400);
+            assert.equal(handlerCalls, 3);
         } finally {
             await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
         }

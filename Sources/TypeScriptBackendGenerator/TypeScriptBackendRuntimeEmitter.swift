@@ -174,6 +174,189 @@ struct TypeScriptBackendRuntimeEmitter {
             }
             return value;
         }
+
+        type ParameterRequest = {
+            params: Record<string, string | undefined>;
+            query: unknown;
+            get(name: string): string | undefined;
+        };
+
+        export function readRequestParameter(
+            request: ParameterRequest,
+            location: "path" | "query" | "header" | "cookie",
+            name: string
+        ): string | undefined {
+            switch (location) {
+                case "path":
+                    return request.params[name];
+                case "query": {
+                    const query = request.query;
+                    if (typeof query !== "object" || query === null || Array.isArray(query)) {
+                        return undefined;
+                    }
+                    const value = (query as Record<string, unknown>)[name];
+                    if (value === undefined) {
+                        return undefined;
+                    }
+                    if (typeof value === "string") {
+                        return value;
+                    }
+                    if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+                        return (value as string[]).join(",");
+                    }
+                    throw new Error(`Invalid ${location} parameter: ${name}`);
+                }
+                case "header":
+                    return request.get(name);
+                case "cookie":
+                    return readCookie(request.get("Cookie"), name);
+            }
+        }
+
+        function readCookie(header: string | undefined, name: string): string | undefined {
+            if (header === undefined) {
+                return undefined;
+            }
+            for (const item of header.split(";")) {
+                const separator = item.indexOf("=");
+                if (separator < 0) {
+                    continue;
+                }
+                const encodedName = item.slice(0, separator).trim();
+                const encodedValue = item.slice(separator + 1).trim();
+                let decodedName: string;
+                let decodedValue: string;
+                try {
+                    decodedName = decodeURIComponent(encodedName);
+                    decodedValue = decodeURIComponent(encodedValue);
+                } catch {
+                    throw new Error(`Invalid cookie parameter: ${name}`);
+                }
+                if (decodedName === name) {
+                    return decodedValue;
+                }
+            }
+            return undefined;
+        }
+
+        export function parseParameterString(value: string | undefined, name: string, required: boolean): string | undefined {
+            if (value === undefined) {
+                if (required) {
+                    throw new Error(`Missing parameter: ${name}`);
+                }
+                return undefined;
+            }
+            return value;
+        }
+
+        export function parseParameterArray(value: string | undefined, name: string, required: boolean): string[] | undefined {
+            if (value === undefined) {
+                if (required) {
+                    throw new Error(`Missing parameter: ${name}`);
+                }
+                return undefined;
+            }
+            return value === "" ? [] : value.split(",");
+        }
+
+        export function parseParameterBoolean(value: string | undefined, name: string, required: boolean): boolean | undefined {
+            const text = parseParameterString(value, name, required);
+            if (text === undefined) {
+                return undefined;
+            }
+            if (text === "true") {
+                return true;
+            }
+            if (text === "false") {
+                return false;
+            }
+            throw new Error(`Invalid boolean parameter: ${name}`);
+        }
+
+        export function parseParameterBigInt(
+            value: string | undefined,
+            name: string,
+            required: boolean,
+            minimum?: bigint,
+            maximum?: bigint
+        ): bigint | undefined {
+            const text = parseParameterString(value, name, required);
+            if (text === undefined || !/^[+-]?\\d+$/.test(text)) {
+                if (text === undefined) {
+                    return undefined;
+                }
+                throw new Error(`Invalid integer parameter: ${name}`);
+            }
+            try {
+                const integer = BigInt(text);
+                if ((minimum !== undefined && integer < minimum) || (maximum !== undefined && integer > maximum)) {
+                    throw new Error(`Integer parameter is outside the supported range: ${name}`);
+                }
+                return integer;
+            } catch {
+                throw new Error(`Invalid integer parameter: ${name}`);
+            }
+        }
+
+        export function parseParameterNarrowInteger(
+            value: string | undefined,
+            name: string,
+            required: boolean,
+            minimum: number,
+            maximum: number
+        ): number | undefined {
+            const text = parseParameterString(value, name, required);
+            if (text === undefined) {
+                return undefined;
+            }
+            if (!/^[+-]?\\d+$/.test(text)) {
+                throw new Error(`Invalid integer parameter: ${name}`);
+            }
+            const integer = Number(text);
+            if (!Number.isSafeInteger(integer) || integer < minimum || integer > maximum) {
+                throw new Error(`Integer parameter is outside the supported range: ${name}`);
+            }
+            return integer;
+        }
+
+        export function parseParameterInteger(value: string | undefined, name: string, required: boolean): number | bigint | undefined {
+            const text = parseParameterString(value, name, required);
+            if (text === undefined) {
+                return undefined;
+            }
+            if (!/^[+-]?\\d+$/.test(text)) {
+                throw new Error(`Invalid integer parameter: ${name}`);
+            }
+            try {
+                const integer = BigInt(text);
+                return integer >= BigInt(Number.MIN_SAFE_INTEGER) && integer <= BigInt(Number.MAX_SAFE_INTEGER)
+                    ? Number(integer)
+                    : integer;
+            } catch {
+                throw new Error(`Invalid integer parameter: ${name}`);
+            }
+        }
+
+        export function parseParameterDateTime(value: string | undefined, name: string, required: boolean): Date | undefined {
+            const text = parseParameterString(value, name, required);
+            return text === undefined ? undefined : parseDate(text);
+        }
+
+        export function parseParameterDate(value: string | undefined, name: string, required: boolean): string | undefined {
+            const text = parseParameterString(value, name, required);
+            if (text !== undefined && !isValidCalendarDate(text)) {
+                throw new Error(`Invalid date parameter: ${name}`);
+            }
+            return text;
+        }
+
+        export function parseParameterTime(value: string | undefined, name: string, required: boolean): string | undefined {
+            const text = parseParameterString(value, name, required);
+            if (text !== undefined && !isValidLocalTime(text)) {
+                throw new Error(`Invalid time parameter: ${name}`);
+            }
+            return text;
+        }
         """
     }
 }
