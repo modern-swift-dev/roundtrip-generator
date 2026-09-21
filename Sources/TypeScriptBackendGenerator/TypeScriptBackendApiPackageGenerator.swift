@@ -76,6 +76,7 @@ public struct TypeScriptBackendApiPackageGenerator {
         switch dataType {
             case .string,
                  .bool,
+                 .uuid,
                  .int,
                  .int8,
                  .int16,
@@ -86,7 +87,12 @@ public struct TypeScriptBackendApiPackageGenerator {
                  .uint16,
                  .uint32,
                  .uint64,
-                 .double:
+                 .double,
+                 .date,
+                 .timelessDate,
+                 .time,
+                 .url,
+                 .binary:
                 break
             case let .object(_, properties, _, _, _, _):
                 for property in properties where property.publishedAsField {
@@ -96,13 +102,7 @@ public struct TypeScriptBackendApiPackageGenerator {
                 if let resolved {
                     try validate(dataType: resolved)
                 }
-            case .uuid,
-                 .date,
-                 .timelessDate,
-                 .time,
-                 .url,
-                 .binary,
-                 .keyedByString,
+            case .keyedByString,
                  .stringEnum,
                  .intEnum,
                  .array,

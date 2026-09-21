@@ -117,6 +117,50 @@ struct TypeScriptBackendGeneratorTests {
         #expect(routes.contains(".parse(parseJsonBody(request.body)) as bigint"))
     }
 
+    @Test func generatedBackendUsesMappedScalarCodecs() throws {
+        let record = ApiTypeSchema.object(
+            typeName: "MappedRecord",
+            properties: [
+                .date("created_at", propertyName: "createdAt"),
+                .url("website"),
+                .binary("payload"),
+                .uuid("identifier"),
+                .timelessDate("business_date", propertyName: "businessDate"),
+                .time("business_time", propertyName: "businessTime")
+            ],
+        )
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/mapped"),
+            security: .unsecured,
+            request: record.asRef,
+            response: record.asRef,
+            acceptableStatuses: [200],
+        )
+        let package = testPackage(operation: operation, references: [record])
+
+        let files = try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()
+        let models = try #require(files.first { $0.relativePath == "src/generated/models.ts" }?.contents)
+        let runtime = try #require(files.first { $0.relativePath == "src/generated/runtime.ts" }?.contents)
+
+        #expect(models.contains("createdAt: Date;"))
+        #expect(models.contains("website: URL;"))
+        #expect(models.contains("payload: Uint8Array;"))
+        #expect(models.contains("isValidISODate"))
+        #expect(models.contains("isValidURL"))
+        #expect(models.contains("isValidBase64"))
+        #expect(models.contains("isValidUUID"))
+        #expect(models.contains("isValidCalendarDate"))
+        #expect(models.contains("isValidLocalTime"))
+        #expect(models.contains("serializeDate"))
+        #expect(models.contains("serializeURL"))
+        #expect(models.contains("uint8ArrayToBase64"))
+        #expect(runtime.contains("parseDate"))
+        #expect(runtime.contains("parseURL"))
+        #expect(runtime.contains("base64ToUint8Array"))
+        #expect(runtime.contains("uint8ArrayToBase64"))
+    }
+
     @Test func securedOperationsAreRejectedUntilAuthenticationIntegrationExists() {
         let operation = ApiOperation.get(
             name: "read",

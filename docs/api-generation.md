@@ -578,6 +578,8 @@ registerGeneratedRoutes(app, {
 
 Generated routes use `express.raw({ type: "application/json" })` and the generated `lossless-json` runtime so wide integer fields remain exact JSON numbers. Register the generated routes before installing a broad `app.use(express.json())` middleware; an earlier ordinary JSON parser would already have rounded wide integers. Narrow integer fields are range-checked before conversion to `number`.
 
+Mapped scalar fields use `Date` for ISO-8601 instants, `URL` for valid URL strings, and `Uint8Array` for padded base64 JSON values. UUIDs, `YYYY-MM-DD` calendar dates, and local `HH:mm:ss` values remain strings; invalid scalar formats are rejected at the generated route boundary. Raw binary request/response transport is a separate capability.
+
 Generate and validate the package with:
 
 ```sh

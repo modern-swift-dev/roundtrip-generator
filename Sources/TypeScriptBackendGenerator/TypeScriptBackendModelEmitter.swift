@@ -11,7 +11,22 @@ struct TypeScriptBackendModelEmitter {
         // Generated code. Do not edit.
 
         import { z } from "zod";
-        import { parseDouble, parseNarrowInteger } from "./runtime.js";
+        import {
+            base64ToUint8Array,
+            isValidBase64,
+            isValidCalendarDate,
+            isValidISODate,
+            isValidLocalTime,
+            isValidURL,
+            isValidUUID,
+            parseDate,
+            parseDouble,
+            parseNarrowInteger,
+            parseURL,
+            serializeDate,
+            serializeURL,
+            uint8ArrayToBase64
+        } from "./runtime.js";
 
         \(declarations)
         """
@@ -48,7 +63,8 @@ struct TypeScriptBackendModelEmitter {
         let encodedFields = publishedProperties.map { property in
             let value = "value.\(property.propertyName.backendPropertyName)"
             let encoded = encodeExpression(for: property.dataType, value: value)
-            return "\(property.rawName.backendStringLiteral): \(encoded),"
+            let optional = property.required ? encoded : "(\(value) == null ? \(value) : \(encoded))"
+            return "\(property.rawName.backendStringLiteral): \(optional),"
         }.joined(separator: "\n")
         return """
         export interface \(typeName.backendTypeName) {
@@ -142,11 +158,14 @@ struct TypeScriptBackendModelEmitter {
 
     func schemaExpression(for dataType: ApiTypeSchema) -> String {
         switch dataType {
-            case .uuid,
-                 .string,
-                 .timelessDate,
-                 .time:
+            case .uuid:
+                return "z.string().refine((value) => isValidUUID(value))"
+            case .string:
                 return "z.string()"
+            case .timelessDate:
+                return "z.string().refine((value) => isValidCalendarDate(value))"
+            case .time:
+                return "z.string().refine((value) => isValidLocalTime(value))"
             case .bool:
                 return "z.boolean()"
             case .int,
@@ -165,10 +184,12 @@ struct TypeScriptBackendModelEmitter {
                 return "z.union([z.number(), z.bigint()]).transform((value) => parseNarrowInteger(value, \(bounds.minimum)n, \(bounds.maximum)n))"
             case .double:
                 return "z.union([z.number(), z.bigint()]).transform((value) => parseDouble(value))"
-            case .date,
-                 .url,
-                 .binary:
-                return "z.unknown()"
+            case .date:
+                return "z.string().refine((value) => isValidISODate(value))"
+            case .url:
+                return "z.string().refine((value) => isValidURL(value))"
+            case .binary:
+                return "z.string().refine((value) => isValidBase64(value))"
             case let .array(type):
                 return "z.array(\(schemaExpression(for: type)))"
             case let .keyedByString(type, _):
@@ -205,6 +226,12 @@ struct TypeScriptBackendModelEmitter {
                  .uint64,
                  .double:
                 expression = "\(schemaExpression(for: dataType)).parse(\(value)) as \(typeDeclaration(for: dataType))"
+            case .date:
+                expression = "parseDate(\(value))"
+            case .url:
+                expression = "parseURL(\(value))"
+            case .binary:
+                expression = "base64ToUint8Array(\(value))"
             case let .array(type):
                 expression = "(\(value) as unknown[]).map((item) => \(decodeExpression(for: type, value: "item")))"
             case let .keyedByString(type, isOptional):
@@ -217,10 +244,7 @@ struct TypeScriptBackendModelEmitter {
                 expression = "decode\(typeName.backendTypeName)(\(value))"
             case let .reference(typeName, _, _, _, dataType):
                 expression = dataType.map { decodeExpression(for: $0, value: value) } ?? "decode\(typeName.backendTypeName)(\(value))"
-            case .date,
-                 .url,
-                 .binary,
-                 .genericReference:
+            case .genericReference:
                 expression = "\(value) as \(typeDeclaration(for: dataType))"
         }
         return optional ? "(\(value) == null ? \(value) : \(expression))" : expression
@@ -228,6 +252,12 @@ struct TypeScriptBackendModelEmitter {
 
     func encodeExpression(for dataType: ApiTypeSchema, value: String) -> String {
         switch dataType {
+            case .date:
+                "serializeDate(\(value))"
+            case .url:
+                "serializeURL(\(value))"
+            case .binary:
+                "uint8ArrayToBase64(\(value))"
             case let .array(type):
                 "(\(value) as unknown[]).map((item) => \(encodeExpression(for: type, value: "item")))"
             case let .keyedByString(type, _):
@@ -263,6 +293,10 @@ struct TypeScriptBackendModelEmitter {
                  .uint64,
                  .double:
                 "\(schemaExpression(for: dataType)).parse(\(value))"
+            case .date,
+                 .url,
+                 .binary:
+                "\(schemaExpression(for: dataType)).parse(\(encodeExpression(for: dataType, value: value)))"
             case let .reference(_, _, _, _, resolved):
                 resolved.map { encodeRootExpression(for: $0, value: value) } ?? encodeExpression(for: dataType, value: value)
             default:

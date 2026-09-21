@@ -99,7 +99,24 @@ struct TypeScriptBackendRoutesEmitter {
 
         import express, { type Express } from "express";
         import { z } from "zod";
-        import { parseJsonBody, stringifyJsonResponse } from "./runtime.js";
+        import {
+            base64ToUint8Array,
+            isValidBase64,
+            isValidCalendarDate,
+            isValidISODate,
+            isValidLocalTime,
+            isValidURL,
+            isValidUUID,
+            parseDate,
+            parseDouble,
+            parseJsonBody,
+            parseNarrowInteger,
+            parseURL,
+            serializeDate,
+            serializeURL,
+            stringifyJsonResponse,
+            uint8ArrayToBase64
+        } from "./runtime.js";
         import {
             \(imports)
         } from "./models.js";

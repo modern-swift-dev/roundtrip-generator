@@ -20,6 +20,12 @@ struct TypeScriptBackendGeneratedPackageTests {
                 .string("display_name", propertyName: "displayName"),
                 .bool("active"),
                 .double("score"),
+                .date("created_at", propertyName: "createdAt"),
+                .url("website"),
+                .binary("payload"),
+                .uuid("identifier"),
+                .timelessDate("business_date", propertyName: "businessDate"),
+                .time("business_time", propertyName: "businessTime"),
                 .int64("id"),
                 .uint64("count"),
                 .int32("attempts")
@@ -94,30 +100,41 @@ struct TypeScriptBackendGeneratedPackageTests {
             adminUsersCreate(input) {
                 handlerCalls += 1;
                 if (input.score === 1.5) {
-                    assert.deepEqual(input, {
-                        displayName: "Ada",
-                        active: true,
-                        score: 1.5,
-                        id: 9223372036854775807n,
-                        count: 18446744073709551615n,
-                        attempts: 12
-                    });
+                    assert.equal(input.createdAt.toISOString(), "2026-09-21T12:34:56.789Z");
+                    assert.equal(input.website.toString(), "https://example.com/path");
+                    assert.deepEqual(Array.from(input.payload), [1, 2, 3]);
+                    assert.equal(input.identifier, "550e8400-e29b-41d4-a716-446655440000");
+                    assert.equal(input.businessDate, "2026-09-21");
+                    assert.equal(input.businessTime, "12:34:56.789");
+                    assert.equal(input.id, 9223372036854775807n);
+                    assert.equal(input.count, 18446744073709551615n);
+                    assert.equal(input.attempts, 12);
                 }
                 if (input.score === 1.6) {
-                    assert.deepEqual(input, {
-                        displayName: "Ada",
-                        active: true,
-                        score: 1.6,
-                        id: -9223372036854775808n,
-                        count: 0n,
-                        attempts: -2147483648
-                    });
+                    assert.equal(input.createdAt.toISOString(), "2026-09-21T12:34:56.789Z");
+                    assert.equal(input.website.toString(), "https://example.com/path");
+                    assert.deepEqual(Array.from(input.payload), [1, 2, 3]);
+                    assert.equal(input.id, -9223372036854775808n);
+                    assert.equal(input.count, 0n);
+                    assert.equal(input.attempts, -2147483648);
                 }
                 if (input.score === 2) {
                     return { ...input, score: "invalid" };
                 }
                 if (input.score === 3) {
                     return { ...input, id: 9223372036854775808n };
+                }
+                if (input.score === 4) {
+                    return { ...input, createdAt: new Date("invalid") };
+                }
+                if (input.score === 5) {
+                    return { ...input, website: {} };
+                }
+                if (input.score === 6) {
+                    return { ...input, identifier: "not-a-UUID" };
+                }
+                if (input.score === 7) {
+                    return { ...input, payload: [] };
                 }
                 return { ...input, privateValue: "removed" };
             }
@@ -128,70 +145,135 @@ struct TypeScriptBackendGeneratedPackageTests {
         });
         const port = server.address().port;
         const url = "http://127.0.0.1:" + port + "/users";
+        const body = (score, id, count, attempts) =>
+            `{"display_name":"Ada","active":true,"score":${score},"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":${id},"count":${count},"attempts":${attempts}}`;
 
         const valid = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: '{"display_name":"Ada","active":true,"score":1.5,"id":9223372036854775807,"count":18446744073709551615,"attempts":12,"undeclared":"removed"}'
+            body: body("1.5", "9223372036854775807", "18446744073709551615", "12").replace("}", ',"undeclared":"removed"}')
         });
         assert.equal(valid.status, 200);
-        assert.equal(await valid.text(), '{"display_name":"Ada","active":true,"score":1.5,"id":9223372036854775807,"count":18446744073709551615,"attempts":12}');
+        assert.equal(await valid.text(), '{"display_name":"Ada","active":true,"score":1.5,"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":9223372036854775807,"count":18446744073709551615,"attempts":12}');
 
         const signedBoundary = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: '{"display_name":"Ada","active":true,"score":1.6,"id":-9223372036854775808,"count":0,"attempts":-2147483648}'
+            body: body("1.6", "-9223372036854775808", "0", "-2147483648")
         });
         assert.equal(signedBoundary.status, 200);
-        assert.equal(await signedBoundary.text(), '{"display_name":"Ada","active":true,"score":1.6,"id":-9223372036854775808,"count":0,"attempts":-2147483648}');
+        assert.equal(await signedBoundary.text(), '{"display_name":"Ada","active":true,"score":1.6,"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":-9223372036854775808,"count":0,"attempts":-2147483648}');
 
         const invalidOutput = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: '{"display_name":"Ada","active":true,"score":2,"id":1,"count":1,"attempts":12}'
+            body: body("2", "1", "1", "12")
         });
         assert.equal(invalidOutput.status, 500);
 
         const invalidWideOutput = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: '{"display_name":"Ada","active":true,"score":3,"id":1,"count":1,"attempts":12}'
+            body: body("3", "1", "1", "12")
         });
         assert.equal(invalidWideOutput.status, 500);
+
+        const invalidDateOutput = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: body("4", "1", "1", "12")
+        });
+        assert.equal(invalidDateOutput.status, 500);
+
+        const invalidUrlOutput = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: body("5", "1", "1", "12")
+        });
+        assert.equal(invalidUrlOutput.status, 500);
+
+        const invalidUUIDOutput = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: body("6", "1", "1", "12")
+        });
+        assert.equal(invalidUUIDOutput.status, 500);
+
+        const invalidBinaryOutput = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: body("7", "1", "1", "12")
+        });
+        assert.equal(invalidBinaryOutput.status, 500);
 
         const invalid = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: '{"display_name":"Ada","active":true,"score":1.5,"id":9223372036854775807,"count":18446744073709551615}'
+            body: body("1.5", "9223372036854775807", "18446744073709551615", "12").replace(',"attempts":12}', "}")
         });
         assert.equal(invalid.status, 400);
-        assert.equal(handlerCalls, 4);
+        assert.equal(handlerCalls, 8);
+
+        const invalidDate = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: body("1.5", "1", "1", "12").replace("2026-09-21T12:34:56.789Z", "not-a-date")
+        });
+        assert.equal(invalidDate.status, 400);
+
+        const invalidCalendarDate = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: body("1.5", "1", "1", "12").replace("2026-09-21", "2026-02-31")
+        });
+        assert.equal(invalidCalendarDate.status, 400);
+
+        const invalidUrl = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: body("1.5", "1", "1", "12").replace("https://example.com/path", "not a url")
+        });
+        assert.equal(invalidUrl.status, 400);
+
+        const invalidUUID = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: body("1.5", "1", "1", "12").replace("550e8400-e29b-41d4-a716-446655440000", "not-a-uuid")
+        });
+        assert.equal(invalidUUID.status, 400);
+
+        const invalidBase64 = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: body("1.5", "1", "1", "12").replace("AQID", "not-base64")
+        });
+        assert.equal(invalidBase64.status, 400);
 
         const negativeUnsigned = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: '{"display_name":"Ada","active":true,"score":1.5,"id":1,"count":-1,"attempts":12}'
+            body: body("1.5", "1", "-1", "12")
         });
         assert.equal(negativeUnsigned.status, 400);
 
         const tooLargeSigned = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: '{"display_name":"Ada","active":true,"score":1.5,"id":9223372036854775808,"count":1,"attempts":12}'
+            body: body("1.5", "9223372036854775808", "1", "12")
         });
         assert.equal(tooLargeSigned.status, 400);
 
         const narrowOutOfRange = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: '{"display_name":"Ada","active":true,"score":1.5,"id":1,"count":1,"attempts":2147483648}'
+            body: body("1.5", "1", "1", "2147483648")
         });
         assert.equal(narrowOutOfRange.status, 400);
 
         const fractionalWide = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: '{"display_name":"Ada","active":true,"score":1.5,"id":1.5,"count":1,"attempts":12}'
+            body: body("1.5", "1.5", "1", "12")
         });
         assert.equal(fractionalWide.status, 400);
 
@@ -201,7 +283,7 @@ struct TypeScriptBackendGeneratedPackageTests {
             body: "{"
         });
         assert.equal(malformed.status, 400);
-        assert.equal(handlerCalls, 4);
+        assert.equal(handlerCalls, 8);
 
         await new Promise((resolve) => server.close(resolve));
         """
