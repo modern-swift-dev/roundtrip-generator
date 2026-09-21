@@ -40,12 +40,38 @@ struct TypeScriptBackendOperationEmitter {
         let inputDeclaration = parameterInputDeclaration()
         return """
         \(inputDeclaration)
-        export type \(operationTypeName)Handler<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}> = (input: GeneratedHandlerInput<Bindings[\"\(handlerName)\"], \(requestType)>, context: GeneratedHandlerContext<Integration, "\(requestPolicy.rawValue)">) => GeneratedHandlerOutput<Bindings[\"\(handlerName)\"], \(responseType)>;
+        export type \(operationTypeName)Handler<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}> = (input: GeneratedHandlerInput<Bindings[\"\(handlerName)\"], \(requestType)>, context: GeneratedHandlerContext<Integration, "\(requestPolicy.rawValue)">) => GeneratedHandlerOutput<Bindings[\"\(handlerName)\"], \(responseType)>;
         """
     }
 
     func handlerField() -> String {
-        "\(handlerName): \(operationTypeName)Handler<Bindings, Integration>;"
+        "\(handlerName): \(operationTypeName)Handler<Bindings, Integration, Multipart>;"
+    }
+
+    var isMultipart: Bool {
+        if case .multiPart = operation.request {
+            return true
+        }
+        return false
+    }
+
+    var multipartAdapterVariable: String {
+        "multipartAdapter_\(handlerName)"
+    }
+
+    func multipartAdapterRegistrationSource() -> String {
+        guard case let .multiPart(parts) = operation.request else {
+            return ""
+        }
+        let requiredParts = parts.map(\.backendStringLiteral).joined(separator: ", ")
+        return """
+        const \(multipartAdapterVariable)Factory = options?.multipart?.\(handlerName);
+        if (!\(multipartAdapterVariable)Factory) { throw new Error(\("Missing multipart adapter for \(handlerName)".backendStringLiteral)); }
+        const \(multipartAdapterVariable) = \(multipartAdapterVariable)Factory({
+            id: \(operationIdentifier.backendStringLiteral),
+            requiredParts: [\(requiredParts)]
+        }) as GeneratedMultipartAdapter<GeneratedMultipartAdapterPart<Multipart["\(handlerName)"]>>;
+        """
     }
 
     var requiresInputSchemaBinding: Bool {
@@ -74,6 +100,7 @@ struct TypeScriptBackendOperationEmitter {
         let routeMiddleware = [
             "...(options?.integration?.\(requestPolicy.rawValue)?.middleware ?? [])",
             "generatedRequestContextMiddleware(options?.integration?.\(requestPolicy.rawValue))",
+            isMultipart ? "...\(multipartAdapterVariable).middleware" : nil,
             requestParser()
         ]
         .compactMap(\.self)
@@ -81,6 +108,7 @@ struct TypeScriptBackendOperationEmitter {
         .joined()
         return """
             app.\(method)(\(path.backendStringLiteral)\(routeMiddleware), async (request, response, next) => {
+            \(applicationRequestPreparation().prepad(4))
                 let decodedInput: \(handlerRequestType());
                 try {
             \(requestDecodeLines().prepad(4))
@@ -113,9 +141,27 @@ struct TypeScriptBackendOperationEmitter {
         """
     }
 
+    private func applicationRequestPreparation() -> String {
+        guard isMultipart else {
+            return ""
+        }
+        return """
+        let multipartParts: ReadonlyMap<string, readonly GeneratedMultipartAdapterPart<Multipart["\(handlerName)"]>[]>;
+        try {
+            multipartParts = await \(multipartAdapterVariable).read(request, response);
+        } catch (error) {
+            next(error);
+            return;
+        }
+        if (response.headersSent || response.writableEnded) {
+            return;
+        }
+        """
+    }
+
     private func handlerRequestType() -> String {
         if !operation.expandedParameters.isEmpty {
-            return "\(operationTypeName)Input"
+            return "\(operationTypeName)Input\(isMultipart ? "<Multipart>" : "")"
         }
         return switch operation.request {
             case .none:
@@ -126,7 +172,7 @@ struct TypeScriptBackendOperationEmitter {
             case let .json(dataType):
                 dataType.map { models.typeDeclaration(for: $0) } ?? "void"
             case .multiPart:
-                "unknown"
+                multipartBodyType()
         }
     }
 
@@ -180,7 +226,7 @@ struct TypeScriptBackendOperationEmitter {
                 decodedInput = request.body;
                 """
             case .multiPart:
-                return "decodedInput = undefined;"
+                return "decodedInput = \(multipartBodyExpression());"
         }
     }
 
@@ -252,7 +298,7 @@ struct TypeScriptBackendOperationEmitter {
             properties.append("    body: \(handlerBodyType());")
         }
         return """
-        export interface \(operationTypeName)Input {
+        export interface \(operationTypeName)Input\(isMultipart ? "<Multipart extends GeneratedMultipartAdapters = {}>" : "") {
         \(properties.joined(separator: "\n"))
         }
         """
@@ -273,8 +319,9 @@ struct TypeScriptBackendOperationEmitter {
                 }
                 const body = request.body;
                 """
-            case .none,
-                 .multiPart:
+            case .multiPart:
+                "const body = \(multipartBodyExpression());"
+            case .none:
                 ""
         }
         var fields = operation.expandedParameters.map { parameter in
@@ -397,8 +444,34 @@ struct TypeScriptBackendOperationEmitter {
             case .binary,
                  .file: "Uint8Array"
             case let .json(dataType): dataType.map { models.typeDeclaration(for: $0) } ?? "never"
-            case .multiPart: "unknown"
+            case .multiPart: multipartBodyType()
         }
+    }
+
+    private func multipartBodyType() -> String {
+        guard case let .multiPart(parts) = operation.request else {
+            return "never"
+        }
+        let requiredParts = parts.map(\.backendStringLiteral).joined(separator: " | ")
+        return "GeneratedMultipartBody<GeneratedMultipartAdapterPart<Multipart[\"\(handlerName)\"]>, \(requiredParts)>"
+    }
+
+    private func multipartBodyExpression() -> String {
+        guard case let .multiPart(parts) = operation.request else {
+            return "undefined"
+        }
+        let required = parts.map { part in
+            "\(part.backendStringLiteral): generatedRequiredMultipartPart(multipartParts, \(part.backendStringLiteral))"
+        }
+        .joined(separator: ",\n")
+        return """
+        {
+            parts: multipartParts,
+            required: {
+        \(required.prepad(8))
+            }
+        } as \(multipartBodyType())
+        """
     }
 
     private var hasRequestBody: Bool {
@@ -478,6 +551,9 @@ struct TypeScriptBackendRoutesEmitter {
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
         let requestPolicyValidation = requestPolicyValidation(operations)
+        let multipartAdapterRegistration = operations.map { $0.multipartAdapterRegistrationSource() }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
         let importedDataTypes = operations.flatMap { operation in
             [operation.operation.request.dataType, operation.operation.response.dataType]
                 .compactMap(\.self)
@@ -553,10 +629,44 @@ struct TypeScriptBackendRoutesEmitter {
                 ? Integration[Policy] extends GeneratedRequestPolicy<infer Context> ? Context : undefined
                 : undefined;
 
-        export interface GeneratedRouteOptions<Integration extends GeneratedRequestIntegration = {}> {
+        export interface GeneratedMultipartOperation {
+            readonly id: string;
+            readonly requiredParts: readonly string[];
+        }
+
+        export interface GeneratedMultipartAdapter<Part = unknown> {
+            readonly middleware: readonly RequestHandler[];
+            read(request: Request, response: Response): GeneratedMaybePromise<ReadonlyMap<string, readonly Part[]>>;
+        }
+
+        export type GeneratedMultipartAdapterFactory<Part = unknown> =
+            (operation: GeneratedMultipartOperation) => GeneratedMultipartAdapter<Part>;
+
+        export interface GeneratedMultipartAdapters {
+        \(operations.filter(\.isMultipart).map { "    \($0.handlerName)?: GeneratedMultipartAdapterFactory;" }.joined(separator: "\n"))
+        }
+
+        export type GeneratedMultipartAdapterPart<Factory> =
+            NonNullable<Factory> extends GeneratedMultipartAdapterFactory<infer Part> ? Part : never;
+
+        export type GeneratedMultipartBody<Part, RequiredPart extends string> = {
+            readonly parts: ReadonlyMap<string, readonly Part[]>;
+            readonly required: { readonly [Name in RequiredPart]: readonly [Part, ...Part[]] };
+        };
+
+        function generatedRequiredMultipartPart<Part>(parts: ReadonlyMap<string, readonly Part[]>, name: string): readonly [Part, ...Part[]] {
+            const values = parts.get(name);
+            if (!values || values.length === 0) {
+                throw new Error(`Missing multipart part: ${name}`);
+            }
+            return values as readonly [Part, ...Part[]];
+        }
+
+        export interface GeneratedRouteOptions<Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}> {
             jsonBodyParser?: RequestHandler;
             rawBodyParser?: RequestHandler;
             integration?: Integration;
+            multipart?: Multipart;
         }
 
         const generatedRequestContexts = new WeakMap<Request, unknown>();
@@ -602,13 +712,14 @@ struct TypeScriptBackendRoutesEmitter {
 
         \(handlers)
 
-        export interface GeneratedHandlers<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}> {
+        export interface GeneratedHandlers<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}> {
         \(fields.prepad())
         }
 
-        export function registerGeneratedRoutes<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}>(app: Express, handlers: GeneratedHandlers<Bindings, Integration>, bindings?: Bindings, options?: GeneratedRouteOptions<Integration>): void {
+        export function registerGeneratedRoutes<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}>(app: Express, handlers: GeneratedHandlers<Bindings, Integration, Multipart>, bindings?: Bindings, options?: GeneratedRouteOptions<Integration, Multipart>): void {
         \(schemaBindingValidation.prepad())
         \(requestPolicyValidation.prepad())
+        \(multipartAdapterRegistration.prepad())
         \(routes.prepad())
         }
         """

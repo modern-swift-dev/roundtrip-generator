@@ -320,6 +320,63 @@ struct TypeScriptBackendGeneratedPackageTests {
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
+    func generatedPackageServesStructuredAndRawMultipartRequests() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let result = ApiTypeSchema.object(
+            typeName: "UploadResult",
+            properties: [
+                .string("filename"),
+                .int32("size"),
+                .string("metadata"),
+                .string("additional"),
+                .int32("repeat_count", propertyName: "repeatCount")
+            ],
+        )
+        let profile = ApiOperation.postMultipart(
+            name: "profile",
+            path: .relative("/profile"),
+            security: .secured,
+            parameters: [.query("compress", .bool()).optional],
+            multiParts: ["file", "metadata"],
+            response: result.asRef,
+            acceptableStatuses: [200],
+        )
+        let rawReceipt = ApiOperation.post(
+            name: "rawReceipt",
+            path: .relative("/raw-receipts"),
+            security: .unsecured,
+            requestType: .binary(mimeType: "multipart/form-data"),
+            responseType: .binary(mimeType: "multipart/form-data"),
+            acceptableStatuses: [200],
+        )
+        let package = ApiPackage(
+            name: "MultipartExample",
+            targetDirUrl: root,
+            modules: [
+                ApiModule(name: "Files", definitions: [
+                    ApiService(name: "Uploads", operations: [profile, rawReceipt], references: [result])
+                ])
+            ],
+        )
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for file in try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles() {
+            try file.write(to: root)
+        }
+        try multipartTypeFixture().write(
+            to: root.appendingPathComponent("src/multipart-fixture.ts"),
+            atomically: true,
+            encoding: .utf8,
+        )
+        try multipartRuntimeTest().write(to: root.appendingPathComponent("test.mjs"), atomically: true, encoding: .utf8)
+
+        try run(["install", "--ignore-scripts", "--package-lock=false"], in: root)
+        try run(["run", "build"], in: root)
+        try run(["exec", "--", "node", "test.mjs"], in: root)
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
     func generatedPackageBindsRouteParametersOverHTTP() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -724,6 +781,242 @@ struct TypeScriptBackendGeneratedPackageTests {
             assert.equal(invalidOutput.status, 500);
             assert.equal(invalidOutput.headers.get("x-success"), null);
             assert.deepEqual(await invalidOutput.json(), { code: "GENERATED_OUTPUT", operation: "Auth.Policies.Secured" });
+        } finally {
+            await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        }
+        """
+    }
+
+    private func multipartTypeFixture() -> String {
+        """
+        import type {
+            GeneratedHandlers,
+            GeneratedMultipartAdapterFactory,
+            GeneratedRequestPolicy
+        } from "./generated/routes.js";
+
+        type UploadPart = {
+            filename?: string;
+            contentType?: string;
+            bytes: Uint8Array;
+        };
+        type Integration = {
+            secured: GeneratedRequestPolicy<{ identity: string }>;
+        };
+        type Multipart = {
+            filesUploadsProfile: GeneratedMultipartAdapterFactory<UploadPart>;
+        };
+
+        const handlers: GeneratedHandlers<{}, Integration, Multipart> = {
+            filesUploadsProfile: async (input, context) => {
+                const file = input.body.required.file[0];
+                const metadata = input.body.required.metadata[0];
+                const additional = input.body.parts.get("caption") ?? [];
+                return {
+                    filename: `${context.identity}:${file.filename ?? "unknown"}`,
+                    size: file.bytes.length,
+                    metadata: new TextDecoder().decode(metadata.bytes),
+                    additional: additional.map((part) => new TextDecoder().decode(part.bytes)).join(","),
+                    repeatCount: additional.length
+                };
+            },
+            filesUploadsRawReceipt: async (input) => input
+        };
+
+        const profileHandler: GeneratedHandlers<{}, Integration, Multipart>["filesUploadsProfile"] = async (input) => {
+            // @ts-expect-error adapter part bytes remain Uint8Array
+            const bytes: string = input.body.required.file[0].bytes;
+            return { filename: "invalid", size: bytes.length, metadata: "", additional: "", repeatCount: 0 };
+        };
+
+        void handlers;
+        void profileHandler;
+        """
+    }
+
+    private func multipartRuntimeTest() -> String {
+        """
+        import assert from "node:assert/strict";
+        import express from "express";
+        import { registerGeneratedRoutes } from "./dist/generated/routes.js";
+        import { GeneratedValidationError } from "./dist/generated/runtime.js";
+
+        class UploadFailure extends Error {}
+
+        function parseMultipart(request) {
+            const contentType = request.get("content-type") ?? "";
+            const match = /boundary=(?:"([^"]+)"|([^;]+))/.exec(contentType);
+            if (!match || !(request.body instanceof Uint8Array)) {
+                throw new UploadFailure("Missing multipart body or boundary");
+            }
+            const boundary = match[1] ?? match[2];
+            const source = Buffer.from(request.body).toString("latin1");
+            const result = new Map();
+            for (let section of source.split(`--${boundary}`).slice(1)) {
+                if (section.startsWith("--")) break;
+                if (section.startsWith("\\r\\n")) section = section.slice(2);
+                if (section.endsWith("\\r\\n")) section = section.slice(0, -2);
+                const separator = section.indexOf("\\r\\n\\r\\n");
+                if (separator < 0) continue;
+                const headers = section.slice(0, separator);
+                const disposition = /content-disposition:\\s*form-data;([^\\r\\n]*)/i.exec(headers);
+                const name = /(?:^\\s*|;\\s*)name="([^"]+)"/i.exec(disposition?.[1] ?? "")?.[1];
+                const filename = /(?:^\\s*|;\\s*)filename="([^"]*)"/i.exec(disposition?.[1] ?? "")?.[1];
+                if (!name) continue;
+                const content = section.slice(separator + 4);
+                const contentTypeMatch = /content-type:\\s*([^\\r\\n]+)/i.exec(headers);
+                const part = {
+                    filename: filename || undefined,
+                    contentType: contentTypeMatch?.[1],
+                    bytes: Uint8Array.from(Buffer.from(content, "latin1"))
+                };
+                result.set(name, [...(result.get(name) ?? []), part]);
+            }
+            return result;
+        }
+
+        const order = [];
+        let factoryCalls = 0;
+        let handlerCalls = 0;
+        const integration = {
+            secured: {
+                middleware: [(request, response, next) => {
+                    order.push("auth");
+                    if (request.get("authorization") !== "Bearer accepted") {
+                        response.status(401).json({ code: "AUTH_REQUIRED" });
+                        return;
+                    }
+                    next();
+                }],
+                context: () => {
+                    order.push("context");
+                    return { identity: "user-1" };
+                }
+            }
+        };
+        const multipart = {
+            filesUploadsProfile: (operation) => {
+                factoryCalls += 1;
+                assert.deepEqual(operation, {
+                    id: "Files.Uploads.Profile",
+                    requiredParts: ["file", "metadata"]
+                });
+                return {
+                    middleware: [
+                        express.raw({ type: "multipart/form-data", limit: "1mb" }),
+                        (_request, _response, next) => { order.push("upload"); next(); }
+                    ],
+                    read: (request) => {
+                        const parts = parseMultipart(request);
+                        const file = parts.get("file")?.[0];
+                        if (file?.contentType !== "image/png") {
+                            throw new UploadFailure("Only PNG files are accepted");
+                        }
+                        return parts;
+                    }
+                };
+            }
+        };
+        const handlers = {
+            filesUploadsProfile: async (input, context) => {
+                handlerCalls += 1;
+                order.push("handler");
+                const file = input.body.required.file[0];
+                const metadata = input.body.required.metadata[0];
+                const captions = input.body.parts.get("caption") ?? [];
+                return {
+                    filename: `${context.identity}:${file.filename}`,
+                    size: file.bytes.length,
+                    metadata: new TextDecoder().decode(metadata.bytes),
+                    additional: captions.map((part) => new TextDecoder().decode(part.bytes)).join(","),
+                    repeatCount: captions.length
+                };
+            },
+            filesUploadsRawReceipt: async (input) => input
+        };
+
+        assert.throws(
+            () => registerGeneratedRoutes(express(), handlers, undefined, { integration }),
+            /Missing multipart adapter for filesUploadsProfile/
+        );
+
+        const app = express();
+        registerGeneratedRoutes(app, handlers, undefined, { integration, multipart });
+        assert.equal(factoryCalls, 1);
+        app.use((error, _request, response, _next) => {
+            if (error instanceof GeneratedValidationError) {
+                response.status(400).json({ code: "INVALID_MULTIPART", operation: error.operationId });
+                return;
+            }
+            if (error instanceof UploadFailure) {
+                response.status(415).json({ code: "UPLOAD_REJECTED" });
+                return;
+            }
+            response.status(500).json({ code: "UNEXPECTED" });
+        });
+
+        const server = app.listen(0);
+        await new Promise((resolve) => server.once("listening", resolve));
+        try {
+            const address = server.address();
+            const base = `http://127.0.0.1:${address.port}`;
+
+            const rejectedAuth = await fetch(`${base}/profile`, { method: "POST" });
+            assert.equal(rejectedAuth.status, 401);
+            assert.equal(handlerCalls, 0);
+
+            order.length = 0;
+            const form = new FormData();
+            form.append("file", new Blob([new Uint8Array([0, 255, 1])], { type: "image/png" }), "avatar.png");
+            form.append("metadata", new Blob(["profile-metadata"], { type: "application/json" }));
+            form.append("caption", "first");
+            form.append("caption", "second");
+            const uploaded = await fetch(`${base}/profile?compress=true`, {
+                method: "POST",
+                headers: { authorization: "Bearer accepted" },
+                body: form
+            });
+            assert.equal(uploaded.status, 200);
+            assert.deepEqual(await uploaded.json(), {
+                filename: "user-1:avatar.png",
+                size: 3,
+                metadata: "profile-metadata",
+                additional: "first,second",
+                repeat_count: 2
+            });
+            assert.deepEqual(order, ["auth", "context", "upload", "handler"]);
+
+            const missing = new FormData();
+            missing.append("file", new Blob([new Uint8Array([1])], { type: "image/png" }), "avatar.png");
+            const missingResponse = await fetch(`${base}/profile`, {
+                method: "POST",
+                headers: { authorization: "Bearer accepted" },
+                body: missing
+            });
+            assert.equal(missingResponse.status, 400);
+            assert.deepEqual(await missingResponse.json(), { code: "INVALID_MULTIPART", operation: "Files.Uploads.Profile" });
+
+            const invalid = new FormData();
+            invalid.append("file", new Blob(["not-an-image"], { type: "text/plain" }), "avatar.txt");
+            invalid.append("metadata", "metadata");
+            const invalidResponse = await fetch(`${base}/profile`, {
+                method: "POST",
+                headers: { authorization: "Bearer accepted" },
+                body: invalid
+            });
+            assert.equal(invalidResponse.status, 415);
+            assert.deepEqual(await invalidResponse.json(), { code: "UPLOAD_REJECTED" });
+
+            const boundary = "raw-receipt-boundary";
+            const rawText = `--${boundary}\\r\\nContent-Disposition: form-data; name="receipt"\\r\\n\\r\\nfirst\\r\\n--${boundary}\\r\\nContent-Disposition: form-data; name="receipt"\\r\\n\\r\\nsecond\\r\\n--${boundary}--\\r\\n`;
+            const rawBytes = new TextEncoder().encode(rawText);
+            const rawResponse = await fetch(`${base}/raw-receipts`, {
+                method: "POST",
+                headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+                body: rawBytes
+            });
+            assert.equal(rawResponse.status, 200);
+            assert.deepEqual(new Uint8Array(await rawResponse.arrayBuffer()), rawBytes);
         } finally {
             await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
         }

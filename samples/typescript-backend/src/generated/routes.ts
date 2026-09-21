@@ -65,10 +65,44 @@ export type GeneratedHandlerContext<Integration, Policy extends keyof GeneratedR
         ? Integration[Policy] extends GeneratedRequestPolicy<infer Context> ? Context : undefined
         : undefined;
 
-export interface GeneratedRouteOptions<Integration extends GeneratedRequestIntegration = {}> {
+export interface GeneratedMultipartOperation {
+    readonly id: string;
+    readonly requiredParts: readonly string[];
+}
+
+export interface GeneratedMultipartAdapter<Part = unknown> {
+    readonly middleware: readonly RequestHandler[];
+    read(request: Request, response: Response): GeneratedMaybePromise<ReadonlyMap<string, readonly Part[]>>;
+}
+
+export type GeneratedMultipartAdapterFactory<Part = unknown> =
+    (operation: GeneratedMultipartOperation) => GeneratedMultipartAdapter<Part>;
+
+export interface GeneratedMultipartAdapters {
+
+}
+
+export type GeneratedMultipartAdapterPart<Factory> =
+    NonNullable<Factory> extends GeneratedMultipartAdapterFactory<infer Part> ? Part : never;
+
+export type GeneratedMultipartBody<Part, RequiredPart extends string> = {
+    readonly parts: ReadonlyMap<string, readonly Part[]>;
+    readonly required: { readonly [Name in RequiredPart]: readonly [Part, ...Part[]] };
+};
+
+function generatedRequiredMultipartPart<Part>(parts: ReadonlyMap<string, readonly Part[]>, name: string): readonly [Part, ...Part[]] {
+    const values = parts.get(name);
+    if (!values || values.length === 0) {
+        throw new Error(`Missing multipart part: ${name}`);
+    }
+    return values as readonly [Part, ...Part[]];
+}
+
+export interface GeneratedRouteOptions<Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}> {
     jsonBodyParser?: RequestHandler;
     rawBodyParser?: RequestHandler;
     integration?: Integration;
+    multipart?: Multipart;
 }
 
 const generatedRequestContexts = new WeakMap<Request, unknown>();
@@ -113,16 +147,18 @@ export type GeneratedWireOutput<Binding, Default> = Binding extends { output?: i
     : Default;
 
 
-export type DemoMessagesEchoHandler<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}> = (input: GeneratedHandlerInput<Bindings["demoMessagesEcho"], Message>, context: GeneratedHandlerContext<Integration, "unsecured">) => GeneratedHandlerOutput<Bindings["demoMessagesEcho"], Message>;
+export type DemoMessagesEchoHandler<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}> = (input: GeneratedHandlerInput<Bindings["demoMessagesEcho"], Message>, context: GeneratedHandlerContext<Integration, "unsecured">) => GeneratedHandlerOutput<Bindings["demoMessagesEcho"], Message>;
 
-export interface GeneratedHandlers<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}> {
-    demoMessagesEcho: DemoMessagesEchoHandler<Bindings, Integration>;
+export interface GeneratedHandlers<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}> {
+    demoMessagesEcho: DemoMessagesEchoHandler<Bindings, Integration, Multipart>;
 }
 
-export function registerGeneratedRoutes<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}>(app: Express, handlers: GeneratedHandlers<Bindings, Integration>, bindings?: Bindings, options?: GeneratedRouteOptions<Integration>): void {
+export function registerGeneratedRoutes<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}>(app: Express, handlers: GeneratedHandlers<Bindings, Integration, Multipart>, bindings?: Bindings, options?: GeneratedRouteOptions<Integration, Multipart>): void {
+
 
 
         app.post("/messages", ...(options?.integration?.unsecured?.middleware ?? []), generatedRequestContextMiddleware(options?.integration?.unsecured), options?.jsonBodyParser ?? express.raw({ type: "application/json" }), async (request, response, next) => {
+
             let decodedInput: Message;
             try {
                         decodedInput = decodeMessage(parseJsonBody(request.body));

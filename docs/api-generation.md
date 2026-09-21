@@ -653,6 +653,7 @@ npm run --prefix generated/backend build
 ROUNDTRIP_BACKEND_RUNTIME_TEST=1 swift test --filter TypeScriptBackendGeneratedPackageTests/generatedPackageCompilesAndServesItsRoute
 ROUNDTRIP_BACKEND_RUNTIME_TEST=1 swift test --filter TypeScriptBackendGeneratedPackageTests/generatedPackagePreservesRawAndBodylessTransport
 ROUNDTRIP_BACKEND_RUNTIME_TEST=1 swift test --filter TypeScriptBackendGeneratedPackageTests/generatedPackageIntegratesAuthenticationContextAndApplicationErrors
+ROUNDTRIP_BACKEND_RUNTIME_TEST=1 swift test --filter TypeScriptBackendGeneratedPackageTests/generatedPackageServesStructuredAndRawMultipartRequests
 ```
 
 The generated-package HTTP test is opt-in because it installs the reference Express/Zod dependency environment; the command above runs the strict TypeScript build and HTTP assertions explicitly.
@@ -670,7 +671,48 @@ The sample's generated files live under `src/generated`; its handwritten `src/se
 
 Raw and file-body operations use `Uint8Array` at the handler boundary. Binary request bodies use `express.raw` with the declared MIME type; file requests use a wildcard raw parser. A binary operation declaring `application/json` still remains raw and is not decoded as JSON. Existing applications may replace these parsers with `GeneratedRouteOptions.rawBodyParser`, while `jsonBodyParser` remains available for JSON routes. The route-local hooks make parser placement configurable, but an application-wide parser installed earlier has already consumed the bytes and cannot be undone; install broad parsers only after generated registration when their ordering would otherwise consume a declared raw body.
 
-Binary responses preserve their exact bytes and declared MIME type. Return the bytes directly for the default status, or use `generatedResponse(value, { status, headers })` from `src/generated/runtime.ts` to select one of the operation's acceptable statuses and add response headers such as pagination metadata. An unexpected status reaches the application's error boundary. `.none` operations and no-body statuses (`1xx`, `204`, `205`, and `304`) end without a response body while retaining headers. Absolute/runtime URLs and multipart operations remain explicitly rejected until their later slices land.
+Binary responses preserve their exact bytes and declared MIME type. Return the bytes directly for the default status, or use `generatedResponse(value, { status, headers })` from `src/generated/runtime.ts` to select one of the operation's acceptable statuses and add response headers such as pagination metadata. An unexpected status reaches the application's error boundary. `.none` operations and no-body statuses (`1xx`, `204`, `205`, and `304`) end without a response body while retaining headers. Absolute and runtime-supplied backend paths remain explicitly rejected.
+
+Multipart operations use an application-owned adapter because upload middleware, limits, storage, and per-part validation differ between Express applications. The generated factory receives the operation identifier and all declared required part names. Its middleware parses or stages the upload, and `read` returns every uploaded value as a map of part name to an array so additional names and repeated values are retained:
+
+```ts
+import type {
+    GeneratedHandlers,
+    GeneratedMultipartAdapterFactory
+} from "./generated/routes.js";
+
+type UploadedPart = {
+    filename?: string;
+    contentType?: string;
+    bytes: Uint8Array;
+};
+
+type Multipart = {
+    adminUploadsUploadMultipart: GeneratedMultipartAdapterFactory<UploadedPart>;
+};
+
+const multipart: Multipart = {
+    adminUploadsUploadMultipart: ({ id, requiredParts }) => ({
+        middleware: [existingUploadMiddleware],
+        read: (request) => request.uploadedParts
+    })
+};
+
+const handlers: GeneratedHandlers<{}, {}, Multipart> = {
+    adminUploadsUploadMultipart: async (input) => {
+        const file = input.body.required.file[0];
+        const metadata = input.body.required.metadata[0];
+        const repeatedCaptions = input.body.parts.get("caption") ?? [];
+        return saveUpload(file, metadata, repeatedCaptions);
+    }
+};
+
+registerGeneratedRoutes(app, handlers, undefined, { multipart });
+```
+
+Registration fails when a declared multipart operation has no adapter. On each request, generated policy middleware and context resolution run before adapter middleware; adapter `read` then runs before generated parameter and required-part validation. Missing declared parts become `GeneratedValidationError` input failures. Exceptions from application upload middleware or `read` remain application errors for the host error boundary to classify. Content-type rules, file-size limits, storage decisions, and richer part schemas belong in the adapter rather than the Swift API model.
+
+Use a binary operation with MIME type `multipart/form-data` when the handler must receive the original multipart bytes instead. That route uses `Uint8Array` and preserves the exact boundary, content, and repeated-part representation; generated code does not reinterpret it as a named-part map. Choose structured multipart for typed uploaded values and raw multipart for byte-exact forwarding, verification, or legacy protocols.
 
 ## TypeScript Client Integration
 

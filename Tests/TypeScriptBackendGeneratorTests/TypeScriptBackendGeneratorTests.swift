@@ -121,6 +121,51 @@ struct TypeScriptBackendGeneratorTests {
         #expect(routes.contains("response.status(output.status).end()"))
     }
 
+    @Test func generatedBackendExposesApplicationOwnedMultipartAdapters() throws {
+        let receipt = ApiTypeSchema.object(typeName: "Receipt", properties: [.string("id")])
+        let operation = ApiOperation.postMultipart(
+            name: "upload",
+            path: .relative("/uploads"),
+            security: .secured,
+            parameters: [.query("compress", .bool()).optional],
+            multiParts: ["file", "metadata"],
+            response: receipt.asRef,
+        )
+
+        let files = try TypeScriptBackendApiPackageGenerator(
+            package: testPackage(operation: operation, references: [receipt]),
+        ).generatedFiles()
+        let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+
+        #expect(routes.contains("export interface GeneratedMultipartOperation"))
+        #expect(routes.contains("export interface GeneratedMultipartAdapter<Part = unknown>"))
+        #expect(routes.contains("export type GeneratedMultipartBody<Part, RequiredPart extends string>"))
+        #expect(routes.contains("adminUsersUpload?: GeneratedMultipartAdapterFactory"))
+        #expect(routes.contains("Missing multipart adapter for adminUsersUpload"))
+        #expect(routes.contains("requiredParts: [\"file\", \"metadata\"]"))
+        #expect(routes.contains("generatedRequiredMultipartPart(multipartParts, \"file\")"))
+        #expect(routes.contains("generatedRequiredMultipartPart(multipartParts, \"metadata\")"))
+        #expect(routes.contains("...multipartAdapter_adminUsersUpload.middleware"))
+        #expect(routes.contains("readonly required: { readonly [Name in RequiredPart]: readonly [Part, ...Part[]] }"))
+        #expect(routes.contains("readonly parts: ReadonlyMap<string, readonly Part[]>"))
+    }
+
+    @Test func generatedBackendRejectsInvalidMultipartPartNames() {
+        for parts in [[], [""], ["file", "file"]] {
+            let operation = ApiOperation.postMultipart(
+                name: "upload",
+                path: .relative("/uploads"),
+                security: .unsecured,
+                multiParts: parts,
+                response: nil,
+            )
+
+            #expect(throws: TypeScriptBackendGeneratorError.invalidPackage(reason: "operation Upload has invalid multipart part names")) {
+                try TypeScriptBackendApiPackageGenerator(package: testPackage(operation: operation)).generatedFiles()
+            }
+        }
+    }
+
     @Test func generatedBackendBindsTypedRouteParameters() throws {
         let payload = ApiTypeSchema.object(typeName: "Payload", properties: [.string("message")])
         let state = ApiTypeSchema.stringEnum(
@@ -634,7 +679,8 @@ struct TypeScriptBackendGeneratorTests {
         #expect(routes.contains("secured?: GeneratedRequestPolicy"))
         #expect(routes.contains("optional?: GeneratedRequestPolicy"))
         #expect(routes.contains("unsecured?: GeneratedRequestPolicy"))
-        #expect(routes.contains("GeneratedHandlers<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}>"))
+        #expect(routes
+            .contains("GeneratedHandlers<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}>"))
         #expect(routes.contains("GeneratedHandlerContext<Integration, \"secured\">"))
         #expect(routes.contains("GeneratedHandlerContext<Integration, \"optional\">"))
         #expect(routes.contains("GeneratedHandlerContext<Integration, \"unsecured\">"))

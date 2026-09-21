@@ -62,8 +62,12 @@ public struct TypeScriptBackendApiPackageGenerator {
                     guard requestType != nil else {
                         throw TypeScriptBackendGeneratorError.unsupportedRequest(operationName: operation.name)
                     }
-                case .multiPart:
-                    throw TypeScriptBackendGeneratorError.unsupportedRequest(operationName: operation.name)
+                case let .multiPart(parts):
+                    guard !parts.isEmpty,
+                          parts.allSatisfy({ !$0.isEmpty }),
+                          Set(parts).count == parts.count else {
+                        throw TypeScriptBackendGeneratorError.invalidPackage(reason: "operation \(operation.name) has invalid multipart part names")
+                    }
                 case .none,
                      .binary,
                      .file:
@@ -373,15 +377,16 @@ public struct TypeScriptBackendApiPackageGenerator {
         import {
             registerGeneratedRoutes,
             type GeneratedHandlers,
+            type GeneratedMultipartAdapters,
             type GeneratedRequestIntegration,
             type GeneratedSchemaBindings,
             type GeneratedRouteOptions
         } from "./generated/routes.js";
 
-        export function createApp<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}>(
-            handlers: GeneratedHandlers<Bindings, Integration>,
+        export function createApp<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}>(
+            handlers: GeneratedHandlers<Bindings, Integration, Multipart>,
             bindings?: Bindings,
-            options?: GeneratedRouteOptions<Integration>,
+            options?: GeneratedRouteOptions<Integration, Multipart>,
         ): Express {
             const app = express();
             registerGeneratedRoutes(app, handlers, bindings, options);
