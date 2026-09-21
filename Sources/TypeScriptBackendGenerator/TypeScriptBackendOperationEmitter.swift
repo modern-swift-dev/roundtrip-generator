@@ -37,13 +37,13 @@ struct TypeScriptBackendOperationEmitter {
             return ""
         }
         let requestName = models.typeDeclaration(for: requestType)
-        let requestDecoder = models.decodeExpression(for: requestType, value: "request.body")
-        let responseEncoder = models.encodeExpression(for: responseType, value: "output")
+        let requestDecoder = models.decodeExpression(for: requestType, value: "parseJsonBody(request.body)")
+        let responseEncoder = models.encodeRootExpression(for: responseType, value: "output")
         let path = relativePath()
         let method = operation.method.rawValue
         let status = operation.acceptableStatuses.first ?? 200
         return """
-            app.\(method)(\(path.backendStringLiteral), express.json(), async (request, response, next) => {
+            app.\(method)(\(path.backendStringLiteral), express.raw({ type: "application/json" }), async (request, response, next) => {
                 let input: \(requestName);
                 try {
                     input = \(requestDecoder);
@@ -55,7 +55,7 @@ struct TypeScriptBackendOperationEmitter {
                 try {
                     const output = await handlers.\(handlerName)(input);
                     const body = \(responseEncoder);
-                    response.status(\(status)).json(body);
+                    response.status(\(status)).type("application/json").send(stringifyJsonResponse(body));
                 } catch (error) {
                     next(error);
                 }
@@ -98,6 +98,8 @@ struct TypeScriptBackendRoutesEmitter {
         // Generated code. Do not edit.
 
         import express, { type Express } from "express";
+        import { z } from "zod";
+        import { parseJsonBody, stringifyJsonResponse } from "./runtime.js";
         import {
             \(imports)
         } from "./models.js";

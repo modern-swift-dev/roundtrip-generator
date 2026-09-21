@@ -19,7 +19,10 @@ struct TypeScriptBackendGeneratedPackageTests {
             properties: [
                 .string("display_name", propertyName: "displayName"),
                 .bool("active"),
-                .double("score")
+                .double("score"),
+                .int64("id"),
+                .uint64("count"),
+                .int32("attempts")
             ],
         )
         let operation = ApiOperation.post(
@@ -60,7 +63,7 @@ struct TypeScriptBackendGeneratedPackageTests {
 
         try run(["install", "--ignore-scripts", "--package-lock=false"], in: root)
         try run(["run", "build"], in: root)
-        try run(["node", "test.mjs"], in: root)
+        try run(["exec", "--", "node", "test.mjs"], in: root)
     }
 
     private func run(_ arguments: [String], in directory: URL) throws {
@@ -91,10 +94,30 @@ struct TypeScriptBackendGeneratedPackageTests {
             adminUsersCreate(input) {
                 handlerCalls += 1;
                 if (input.score === 1.5) {
-                    assert.deepEqual(input, { displayName: "Ada", active: true, score: 1.5 });
+                    assert.deepEqual(input, {
+                        displayName: "Ada",
+                        active: true,
+                        score: 1.5,
+                        id: 9223372036854775807n,
+                        count: 18446744073709551615n,
+                        attempts: 12
+                    });
+                }
+                if (input.score === 1.6) {
+                    assert.deepEqual(input, {
+                        displayName: "Ada",
+                        active: true,
+                        score: 1.6,
+                        id: -9223372036854775808n,
+                        count: 0n,
+                        attempts: -2147483648
+                    });
                 }
                 if (input.score === 2) {
                     return { ...input, score: "invalid" };
+                }
+                if (input.score === 3) {
+                    return { ...input, id: 9223372036854775808n };
                 }
                 return { ...input, privateValue: "removed" };
             }
@@ -109,34 +132,76 @@ struct TypeScriptBackendGeneratedPackageTests {
         const valid = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-                display_name: "Ada",
-                active: true,
-                score: 1.5,
-                undeclared: "removed"
-            })
+            body: '{"display_name":"Ada","active":true,"score":1.5,"id":9223372036854775807,"count":18446744073709551615,"attempts":12,"undeclared":"removed"}'
         });
         assert.equal(valid.status, 200);
-        assert.deepEqual(await valid.json(), {
-            display_name: "Ada",
-            active: true,
-            score: 1.5
+        assert.equal(await valid.text(), '{"display_name":"Ada","active":true,"score":1.5,"id":9223372036854775807,"count":18446744073709551615,"attempts":12}');
+
+        const signedBoundary = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"display_name":"Ada","active":true,"score":1.6,"id":-9223372036854775808,"count":0,"attempts":-2147483648}'
         });
+        assert.equal(signedBoundary.status, 200);
+        assert.equal(await signedBoundary.text(), '{"display_name":"Ada","active":true,"score":1.6,"id":-9223372036854775808,"count":0,"attempts":-2147483648}');
 
         const invalidOutput = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ display_name: "Ada", active: true, score: 2 })
+            body: '{"display_name":"Ada","active":true,"score":2,"id":1,"count":1,"attempts":12}'
         });
         assert.equal(invalidOutput.status, 500);
+
+        const invalidWideOutput = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"display_name":"Ada","active":true,"score":3,"id":1,"count":1,"attempts":12}'
+        });
+        assert.equal(invalidWideOutput.status, 500);
 
         const invalid = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ display_name: "Ada", active: true })
+            body: '{"display_name":"Ada","active":true,"score":1.5,"id":9223372036854775807,"count":18446744073709551615}'
         });
         assert.equal(invalid.status, 400);
-        assert.equal(handlerCalls, 2);
+        assert.equal(handlerCalls, 4);
+
+        const negativeUnsigned = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"display_name":"Ada","active":true,"score":1.5,"id":1,"count":-1,"attempts":12}'
+        });
+        assert.equal(negativeUnsigned.status, 400);
+
+        const tooLargeSigned = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"display_name":"Ada","active":true,"score":1.5,"id":9223372036854775808,"count":1,"attempts":12}'
+        });
+        assert.equal(tooLargeSigned.status, 400);
+
+        const narrowOutOfRange = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"display_name":"Ada","active":true,"score":1.5,"id":1,"count":1,"attempts":2147483648}'
+        });
+        assert.equal(narrowOutOfRange.status, 400);
+
+        const fractionalWide = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"display_name":"Ada","active":true,"score":1.5,"id":1.5,"count":1,"attempts":12}'
+        });
+        assert.equal(fractionalWide.status, 400);
+
+        const malformed = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: "{"
+        });
+        assert.equal(malformed.status, 400);
+        assert.equal(handlerCalls, 4);
 
         await new Promise((resolve) => server.close(resolve));
         """

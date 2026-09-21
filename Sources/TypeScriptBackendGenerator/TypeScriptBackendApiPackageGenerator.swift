@@ -76,6 +76,16 @@ public struct TypeScriptBackendApiPackageGenerator {
         switch dataType {
             case .string,
                  .bool,
+                 .int,
+                 .int8,
+                 .int16,
+                 .int32,
+                 .int64,
+                 .uint,
+                 .uint8,
+                 .uint16,
+                 .uint32,
+                 .uint64,
                  .double:
                 break
             case let .object(_, properties, _, _, _, _):
@@ -87,16 +97,6 @@ public struct TypeScriptBackendApiPackageGenerator {
                     try validate(dataType: resolved)
                 }
             case .uuid,
-                 .int,
-                 .int8,
-                 .int16,
-                 .int32,
-                 .int64,
-                 .uint,
-                 .uint8,
-                 .uint16,
-                 .uint32,
-                 .uint64,
                  .date,
                  .timelessDate,
                  .time,
@@ -149,6 +149,7 @@ public struct TypeScriptBackendApiPackageGenerator {
           },
           "dependencies": {
             "express": "^5.2.1",
+            "lossless-json": "^4.3.0",
             "zod": "^4.4.3"
           },
           "devDependencies": {

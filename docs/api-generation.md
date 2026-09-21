@@ -576,6 +576,8 @@ registerGeneratedRoutes(app, {
 });
 ```
 
+Generated routes use `express.raw({ type: "application/json" })` and the generated `lossless-json` runtime so wide integer fields remain exact JSON numbers. Register the generated routes before installing a broad `app.use(express.json())` middleware; an earlier ordinary JSON parser would already have rounded wide integers. Narrow integer fields are range-checked before conversion to `number`.
+
 Generate and validate the package with:
 
 ```sh

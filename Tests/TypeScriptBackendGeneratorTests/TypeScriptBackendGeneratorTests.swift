@@ -45,6 +45,78 @@ struct TypeScriptBackendGeneratorTests {
         #expect(packageJSON.contains(#""zod": "^4.4.3""#))
     }
 
+    @Test func generatedBackendUsesLosslessNumbersForIntegerBoundaries() throws {
+        let record = ApiTypeSchema.object(
+            typeName: "Record",
+            properties: [
+                .int64("signed"),
+                .uint64("unsigned"),
+                .int("platformSigned"),
+                .uint("platformUnsigned"),
+                .int8("tinySigned"),
+                .int16("smallSigned"),
+                .int32("narrowSigned"),
+                .uint8("tinyUnsigned"),
+                .uint16("smallUnsigned"),
+                .uint32("narrowUnsigned"),
+                .double("ratio")
+            ],
+        )
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/records"),
+            security: .unsecured,
+            request: record.asRef,
+            response: record.asRef,
+            acceptableStatuses: [200],
+        )
+        let package = testPackage(operation: operation, references: [record])
+
+        let files = try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()
+        let models = try #require(files.first { $0.relativePath == "src/generated/models.ts" }?.contents)
+        let runtime = try #require(files.first { $0.relativePath == "src/generated/runtime.ts" }?.contents)
+        let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+        let packageJSON = try #require(files.first { $0.relativePath == "package.json" }?.contents)
+
+        #expect(models.contains("signed: bigint;"))
+        #expect(models.contains("unsigned: bigint;"))
+        #expect(models.contains("platformSigned: bigint;"))
+        #expect(models.contains("platformUnsigned: bigint;"))
+        #expect(models.contains("tinySigned: number;"))
+        #expect(models.contains("smallSigned: number;"))
+        #expect(models.contains("tinyUnsigned: number;"))
+        #expect(models.contains("smallUnsigned: number;"))
+        #expect(models.contains("z.bigint().refine"))
+        #expect(models.contains("parseNarrowInteger"))
+        #expect(models.contains("parseDouble"))
+        #expect(runtime.contains(#"from "lossless-json""#))
+        #expect(runtime.contains("parseNumberAndBigInt"))
+        #expect(runtime.contains("stringifyJsonResponse"))
+        #expect(routes.contains("express.raw"))
+        #expect(routes.contains("parseJsonBody"))
+        #expect(routes.contains("stringifyJsonResponse"))
+        #expect(packageJSON.contains(#""lossless-json": "^4.3.0""#))
+    }
+
+    @Test func generatedBackendValidatesRootNumericBodies() throws {
+        let operation = ApiOperation.post(
+            name: "echo",
+            path: .relative("/numbers"),
+            security: .unsecured,
+            request: .int64(),
+            response: .int64(),
+            acceptableStatuses: [200],
+        )
+        let package = testPackage(operation: operation)
+
+        let files = try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()
+        let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+
+        #expect(routes.contains("import { z } from \"zod\";"))
+        #expect(routes.contains("z.bigint().refine"))
+        #expect(routes.contains(".parse(parseJsonBody(request.body)) as bigint"))
+    }
+
     @Test func securedOperationsAreRejectedUntilAuthenticationIntegrationExists() {
         let operation = ApiOperation.get(
             name: "read",

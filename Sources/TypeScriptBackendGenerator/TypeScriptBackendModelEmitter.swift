@@ -11,6 +11,7 @@ struct TypeScriptBackendModelEmitter {
         // Generated code. Do not edit.
 
         import { z } from "zod";
+        import { parseDouble, parseNarrowInteger } from "./runtime.js";
 
         \(declarations)
         """
@@ -105,15 +106,16 @@ struct TypeScriptBackendModelEmitter {
             case .bool:
                 "boolean"
             case .int,
-                 .int8,
+                 .uint,
+                 .int64,
+                 .uint64:
+                "bigint"
+            case .int8,
                  .int16,
                  .int32,
-                 .int64,
-                 .uint,
                  .uint8,
                  .uint16,
                  .uint32,
-                 .uint64,
                  .double:
                 "number"
             case .date:
@@ -144,38 +146,42 @@ struct TypeScriptBackendModelEmitter {
                  .string,
                  .timelessDate,
                  .time:
-                "z.string()"
+                return "z.string()"
             case .bool:
-                "z.boolean()"
+                return "z.boolean()"
             case .int,
-                 .int8,
+                 .uint,
+                 .int64,
+                 .uint64:
+                let bounds = integerBounds(for: dataType)
+                return "z.bigint().refine((value) => value >= \(bounds.minimum)n && value <= \(bounds.maximum)n)"
+            case .int8,
                  .int16,
                  .int32,
-                 .int64,
-                 .uint,
                  .uint8,
                  .uint16,
-                 .uint32,
-                 .uint64,
-                 .double:
-                "z.number()"
+                 .uint32:
+                let bounds = integerBounds(for: dataType)
+                return "z.union([z.number(), z.bigint()]).transform((value) => parseNarrowInteger(value, \(bounds.minimum)n, \(bounds.maximum)n))"
+            case .double:
+                return "z.union([z.number(), z.bigint()]).transform((value) => parseDouble(value))"
             case .date,
                  .url,
                  .binary:
-                "z.unknown()"
+                return "z.unknown()"
             case let .array(type):
-                "z.array(\(schemaExpression(for: type)))"
+                return "z.array(\(schemaExpression(for: type)))"
             case let .keyedByString(type, _):
-                "z.record(z.string(), \(schemaExpression(for: type)))"
+                return "z.record(z.string(), \(schemaExpression(for: type)))"
             case let .object(typeName, _, _, _, _, _),
                  let .stringEnum(typeName, _, _, _, _),
                  let .intEnum(typeName, _, _, _),
                  let .dynamicObject(typeName, _, _, _, _, _, _, _, _):
-                "\(typeName.backendTypeName)WireSchema()"
+                return "\(typeName.backendTypeName)WireSchema()"
             case let .reference(typeName, _, _, _, dataType):
-                dataType.map(schemaExpression(for:)) ?? "\(typeName.backendTypeName)WireSchema()"
+                return dataType.map(schemaExpression(for:)) ?? "\(typeName.backendTypeName)WireSchema()"
             case let .genericReference(typeName, _):
-                "\(typeName.backendTypeName)WireSchema()"
+                return "\(typeName.backendTypeName)WireSchema()"
         }
     }
 
@@ -198,7 +204,7 @@ struct TypeScriptBackendModelEmitter {
                  .uint32,
                  .uint64,
                  .double:
-                expression = "\(value) as \(typeDeclaration(for: dataType))"
+                expression = "\(schemaExpression(for: dataType)).parse(\(value)) as \(typeDeclaration(for: dataType))"
             case let .array(type):
                 expression = "(\(value) as unknown[]).map((item) => \(decodeExpression(for: type, value: "item")))"
             case let .keyedByString(type, isOptional):
@@ -235,6 +241,57 @@ struct TypeScriptBackendModelEmitter {
                 dataType.map { encodeExpression(for: $0, value: value) } ?? "encode\(typeName.backendTypeName)(\(value))"
             default:
                 value
+        }
+    }
+
+    func encodeRootExpression(for dataType: ApiTypeSchema, value: String) -> String {
+        switch dataType {
+            case .uuid,
+                 .string,
+                 .timelessDate,
+                 .time,
+                 .bool,
+                 .int,
+                 .int8,
+                 .int16,
+                 .int32,
+                 .int64,
+                 .uint,
+                 .uint8,
+                 .uint16,
+                 .uint32,
+                 .uint64,
+                 .double:
+                "\(schemaExpression(for: dataType)).parse(\(value))"
+            case let .reference(_, _, _, _, resolved):
+                resolved.map { encodeRootExpression(for: $0, value: value) } ?? encodeExpression(for: dataType, value: value)
+            default:
+                encodeExpression(for: dataType, value: value)
+        }
+    }
+
+    private func integerBounds(for dataType: ApiTypeSchema) -> (minimum: String, maximum: String) {
+        switch dataType {
+            case .int,
+                 .int64:
+                ("-9223372036854775808", "9223372036854775807")
+            case .uint,
+                 .uint64:
+                ("0", "18446744073709551615")
+            case .int8:
+                ("-128", "127")
+            case .int16:
+                ("-32768", "32767")
+            case .int32:
+                ("-2147483648", "2147483647")
+            case .uint8:
+                ("0", "255")
+            case .uint16:
+                ("0", "65535")
+            case .uint32:
+                ("0", "4294967295")
+            default:
+                fatalError("Not an integer data type")
         }
     }
 }
