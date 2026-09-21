@@ -211,6 +211,54 @@ struct TypeScriptBackendGeneratedPackageTests {
         try run(["exec", "--", "node", "test.mjs"], in: root)
     }
 
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
+    func generatedPackagePreservesRawAndBodylessTransport() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let upload = ApiOperation.post(
+            name: "upload",
+            path: .relative("/upload"),
+            security: .unsecured,
+            requestType: .binary(mimeType: "application/json"),
+            responseType: .binary(mimeType: "image/png"),
+            acceptableStatuses: [201, 204],
+        )
+        let health = ApiOperation(
+            name: "health",
+            method: .get,
+            path: .relative("/health"),
+            security: .unsecured,
+            parameters: [],
+            request: .none,
+            response: .none,
+            acceptableStatuses: [204],
+            extraImports: [],
+        )
+        let fileUpload = ApiOperation.post(
+            name: "fileUpload",
+            path: .relative("/file-upload"),
+            security: .unsecured,
+            requestType: .file,
+            responseType: .binary(mimeType: "application/octet-stream"),
+            acceptableStatuses: [200],
+        )
+        let package = ApiPackage(
+            name: "RawExample",
+            targetDirUrl: root,
+            modules: [ApiModule(name: "Files", definitions: [ApiService(name: "Transport", operations: [upload, fileUpload, health])])],
+        )
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for file in try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles() {
+            try file.write(to: root)
+        }
+        try rawRuntimeTest().write(to: root.appendingPathComponent("test.mjs"), atomically: true, encoding: .utf8)
+
+        try run(["install", "--ignore-scripts", "--package-lock=false"], in: root)
+        try run(["run", "build"], in: root)
+        try run(["exec", "--", "node", "test.mjs"], in: root)
+    }
+
     private func run(_ arguments: [String], in directory: URL) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -225,6 +273,61 @@ struct TypeScriptBackendGeneratedPackageTests {
             let text = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
             throw NSError(domain: "TypeScriptBackendGeneratedPackageTests", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: text])
         }
+    }
+
+    private func rawRuntimeTest() -> String {
+        """
+        import assert from "node:assert/strict";
+        import express from "express";
+        import { registerGeneratedRoutes } from "./dist/generated/routes.js";
+        import { generatedResponse } from "./dist/generated/runtime.js";
+
+        const app = express();
+        const handlers = {
+            filesTransportUpload: async (input) => generatedResponse(input, {
+                status: 201,
+                headers: { "x-page": "1" }
+            }),
+            filesTransportFileUpload: async (input) => generatedResponse(input),
+            filesTransportHealth: async () => generatedResponse(undefined, {
+                status: 204,
+                headers: { "x-health": "ok" }
+            })
+        };
+        registerGeneratedRoutes(app, handlers);
+        const server = app.listen(0);
+        await new Promise((resolve) => server.once("listening", resolve));
+        try {
+            const address = server.address();
+            const requestBytes = new Uint8Array([0, 255, 1, 10]);
+            const upload = await fetch(`http://127.0.0.1:${address.port}/upload`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: requestBytes
+            });
+            assert.equal(upload.status, 201);
+            assert.equal(upload.headers.get("content-type"), "image/png");
+            assert.equal(upload.headers.get("x-page"), "1");
+            assert.deepEqual(new Uint8Array(await upload.arrayBuffer()), requestBytes);
+
+            const fileBytes = new Uint8Array([9, 8, 7, 6]);
+            const fileUpload = await fetch(`http://127.0.0.1:${address.port}/file-upload`, {
+                method: "POST",
+                headers: { "content-type": "application/octet-stream" },
+                body: fileBytes
+            });
+            assert.equal(fileUpload.status, 200);
+            assert.equal(fileUpload.headers.get("content-type"), "application/octet-stream");
+            assert.deepEqual(new Uint8Array(await fileUpload.arrayBuffer()), fileBytes);
+
+            const health = await fetch(`http://127.0.0.1:${address.port}/health`);
+            assert.equal(health.status, 204);
+            assert.equal(health.headers.get("x-health"), "ok");
+            assert.equal(await health.text(), "");
+        } finally {
+            await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        }
+        """
     }
 
     private func runtimeTest() -> String {

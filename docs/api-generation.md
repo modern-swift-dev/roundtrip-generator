@@ -615,6 +615,7 @@ Generate and validate the package with:
 npm install --prefix generated/backend
 npm run --prefix generated/backend build
 ROUNDTRIP_BACKEND_RUNTIME_TEST=1 swift test --filter TypeScriptBackendGeneratedPackageTests/generatedPackageCompilesAndServesItsRoute
+ROUNDTRIP_BACKEND_RUNTIME_TEST=1 swift test --filter TypeScriptBackendGeneratedPackageTests/generatedPackagePreservesRawAndBodylessTransport
 ```
 
 The generated-package HTTP test is opt-in because it installs the reference Express/Zod dependency environment; the command above runs the strict TypeScript build and HTTP assertions explicitly.
@@ -630,7 +631,9 @@ node samples/typescript-backend/test.mjs
 
 The sample's generated files live under `src/generated`; its handwritten `src/server.ts` owns server startup and handlers, while generated `src/app.ts` supplies the minimal Express application and route-registration bootstrap. Regeneration does not replace the server or HTTP test. Use `TypeScriptBackendGeneratorOptions.existingProject(sourceDirectory: "src/generated")` when the host already owns its package and bootstrap; in that mode only generated runtime, models, routes, and index files are written. Standalone mode owns the package manifest, TypeScript configuration, root export, and `createApp` bootstrap in addition to the generated sources. Hosts may pass `GeneratedRouteOptions.jsonBodyParser` (or install their own application middleware before registration) when parser behavior or ordering needs to differ; the default remains the lossless raw-body parser.
 
-Secured, absolute, runtime-URL, non-JSON, and bodyless operations are rejected by this first slice instead of being emitted as incomplete routes. Authentication/context, additional transports, and existing-project ownership controls are added by the later backend slices.
+Raw and file-body operations use `Uint8Array` at the handler boundary. Binary request bodies use `express.raw` with the declared MIME type; file requests use a wildcard raw parser. A binary operation declaring `application/json` still remains raw and is not decoded as JSON. Existing applications may replace these parsers with `GeneratedRouteOptions.rawBodyParser`, while `jsonBodyParser` remains available for JSON routes. The route-local hooks make parser placement configurable, but an application-wide parser installed earlier has already consumed the bytes and cannot be undone; install broad parsers only after generated registration when their ordering would otherwise consume a declared raw body.
+
+Binary responses preserve their exact bytes and declared MIME type. Return the bytes directly for the default status, or use `generatedResponse(value, { status, headers })` from `src/generated/runtime.ts` to select one of the operation's acceptable statuses and add response headers such as pagination metadata. An unexpected status reaches the application's error boundary. `.none` operations and no-body statuses (`1xx`, `204`, `205`, and `304`) end without a response body while retaining headers. Absolute/runtime URLs, multipart operations, and unresolved bindings remain explicitly rejected until their later slices land.
 
 ## TypeScript Client Integration
 

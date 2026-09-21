@@ -15,11 +15,15 @@ import {
     parseJsonBody,
     parseNarrowInteger,
     parseURL,
+    generatedResponseHasBody,
+    normalizeGeneratedResponse,
     serializeDate,
     serializeURL,
     stringifyJsonResponse,
+    validateGeneratedResponseStatus,
     uint8ArrayToBase64
 } from "./runtime.js";
+import { type GeneratedResponse } from "./runtime.js";
 import {
     decodeMessage,
     encodeMessage,
@@ -35,6 +39,7 @@ export interface GeneratedOperationBinding<HandlerInput = unknown, HandlerOutput
 
 export interface GeneratedRouteOptions {
     jsonBodyParser?: RequestHandler;
+    rawBodyParser?: RequestHandler;
 }
 
 export interface GeneratedSchemaBindings {
@@ -45,9 +50,13 @@ export type GeneratedHandlerInput<Binding, Default> = Binding extends { input?: 
     ? NonNullable<Schema> extends z.ZodTypeAny ? z.output<NonNullable<Schema>> : Default
     : Default;
 
-export type GeneratedHandlerOutput<Binding, Default> = Binding extends { output?: infer Schema }
+export type GeneratedHandlerValue<Binding, Default> = Binding extends { output?: infer Schema }
     ? NonNullable<Schema> extends z.ZodTypeAny ? z.input<NonNullable<Schema>> | Promise<z.input<NonNullable<Schema>>> : Default | Promise<Default>
     : Default | Promise<Default>;
+
+export type GeneratedHandlerOutput<Binding, Default> = GeneratedHandlerValue<Binding, Default>
+    | GeneratedResponse<Awaited<GeneratedHandlerValue<Binding, Default>>>
+    | Promise<GeneratedResponse<Awaited<GeneratedHandlerValue<Binding, Default>>> | Awaited<GeneratedHandlerValue<Binding, Default>>>;
 
 export type GeneratedWireOutput<Binding, Default> = Binding extends { output?: infer Schema }
     ? NonNullable<Schema> extends z.ZodTypeAny ? z.output<NonNullable<Schema>> : Default
@@ -64,18 +73,26 @@ export function registerGeneratedRoutes<Bindings extends GeneratedSchemaBindings
         app.post("/messages", options?.jsonBodyParser ?? express.raw({ type: "application/json" }), async (request, response, next) => {
             let input: GeneratedHandlerInput<Bindings["demoMessagesEcho"], Message>;
             try {
-                const decodedInput = decodeMessage(parseJsonBody(request.body));
-                input = (bindings?.demoMessagesEcho?.input ? bindings.demoMessagesEcho.input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["demoMessagesEcho"], Message>;
+                        const decodedInput = decodeMessage(parseJsonBody(request.body));
+                    input = (bindings?.demoMessagesEcho?.input ? bindings.demoMessagesEcho.input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["demoMessagesEcho"], Message>;
             } catch {
                 response.status(400).json({ error: "Invalid request" });
                 return;
             }
 
             try {
-                const output = await handlers.demoMessagesEcho(input);
-                const publicOutput = (bindings?.demoMessagesEcho?.output ? bindings.demoMessagesEcho.output.parse(output) : output) as GeneratedWireOutput<Bindings["demoMessagesEcho"], Message>;
-                const body = encodeMessage(publicOutput);
-                response.status(200).type("application/json").send(stringifyJsonResponse(body));
+                const output = normalizeGeneratedResponse(await handlers.demoMessagesEcho(input), 200);
+                validateGeneratedResponseStatus(output.status, [200]);
+                for (const [name, value] of Object.entries(output.headers)) {
+                    response.setHeader(name, value);
+                }
+                        const publicOutput = (bindings?.demoMessagesEcho?.output ? bindings.demoMessagesEcho.output.parse(output.value) : output.value) as GeneratedWireOutput<Bindings["demoMessagesEcho"], Message>;
+                    const body = encodeMessage(publicOutput);
+                    if (!generatedResponseHasBody(output.status)) {
+                        response.status(output.status).end();
+                        return;
+                    }
+                    response.status(output.status).type("application/json").send(stringifyJsonResponse(body));
             } catch (error) {
                 next(error);
             }

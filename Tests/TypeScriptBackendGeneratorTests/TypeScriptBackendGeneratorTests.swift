@@ -76,6 +76,51 @@ struct TypeScriptBackendGeneratorTests {
         ])
     }
 
+    @Test func generatedBackendSupportsRawAndBodylessOperations() throws {
+        let upload = ApiOperation.post(
+            name: "upload",
+            path: .relative("/upload"),
+            security: .unsecured,
+            requestType: .binary(mimeType: "application/json"),
+            responseType: .binary(mimeType: "image/png"),
+            acceptableStatuses: [200, 204],
+        )
+        let health = ApiOperation(
+            name: "health",
+            method: .get,
+            path: .relative("/health"),
+            security: .unsecured,
+            parameters: [],
+            request: .none,
+            response: .none,
+            acceptableStatuses: [204],
+            extraImports: [],
+        )
+        let fileUpload = ApiOperation.post(
+            name: "fileUpload",
+            path: .relative("/file-upload"),
+            security: .unsecured,
+            requestType: .file,
+            responseType: .none,
+            acceptableStatuses: [204],
+        )
+        let package = ApiPackage(
+            name: "Example",
+            targetDirUrl: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+            modules: [ApiModule(name: "Admin", definitions: [ApiService(name: "Files", operations: [upload, health, fileUpload])])],
+        )
+
+        let files = try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()
+        let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+        #expect(routes.contains("adminFilesUpload: AdminFilesUploadHandler"))
+        #expect(routes.contains("adminFilesHealth: AdminFilesHealthHandler"))
+        #expect(routes.contains("options?.rawBodyParser ?? express.raw({ type: \"application/json\" })"))
+        #expect(routes.contains("options?.rawBodyParser ?? express.raw({ type: \"*/*\" })"))
+        #expect(routes.contains("output.value instanceof Uint8Array"))
+        #expect(routes.contains("app.get(\"/health\", async"))
+        #expect(routes.contains("response.status(output.status).end()"))
+    }
+
     @Test func generatedBackendExposesApplicationSchemaBindings() throws {
         let external = ApiTypeSchema.reference(typeName: "ExternalUser", strict: false)
         let envelope = ApiTypeSchema.object(

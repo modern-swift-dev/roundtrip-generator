@@ -2,7 +2,52 @@
 
 import { parse, parseNumberAndBigInt, stringify } from "lossless-json";
 
-export type BackendHandlerResult<T> = T | Promise<T>;
+export interface GeneratedResponse<T> {
+    readonly kind: "generated-response";
+    readonly status: number;
+    readonly headers: Record<string, string>;
+    readonly value: T;
+}
+
+export interface GeneratedResponseOptions {
+    status?: number;
+    headers?: Record<string, string>;
+}
+
+export function generatedResponse<T>(value: T, options: GeneratedResponseOptions = {}): GeneratedResponse<T> {
+    return {
+        kind: "generated-response",
+        status: options.status ?? 200,
+        headers: options.headers ?? {},
+        value
+    };
+}
+
+export function isGeneratedResponse(value: unknown): value is GeneratedResponse<unknown> {
+    if (typeof value !== "object" || value === null) {
+        return false;
+    }
+    const response = value as Partial<GeneratedResponse<unknown>>;
+    return response.kind === "generated-response"
+        && typeof response.status === "number"
+        && typeof response.headers === "object"
+        && response.headers !== null
+        && "value" in response;
+}
+
+export function normalizeGeneratedResponse<T>(value: T | GeneratedResponse<T>, defaultStatus: number): GeneratedResponse<T> {
+    return isGeneratedResponse(value) ? value as GeneratedResponse<T> : generatedResponse(value, { status: defaultStatus });
+}
+
+export function validateGeneratedResponseStatus(status: number, validStatuses: readonly number[]): void {
+    if (!Number.isInteger(status) || !validStatuses.includes(status)) {
+        throw new Error(`Unexpected response status: ${status}`);
+    }
+}
+
+export function generatedResponseHasBody(status: number): boolean {
+    return !(status >= 100 && status < 200) && ![204, 205, 304].includes(status);
+}
 
 export function parseJsonBody(value: Uint8Array | string): unknown {
     const text = typeof value === "string" ? value : new TextDecoder().decode(value);

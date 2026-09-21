@@ -16,12 +16,8 @@ struct TypeScriptBackendOperationEmitter {
     }
 
     func handlerDeclaration() -> String {
-        guard let requestDataType = operation.request.dataType,
-              let responseDataType = operation.response.dataType else {
-            return ""
-        }
-        let requestType = models.typeDeclaration(for: requestDataType)
-        let responseType = models.typeDeclaration(for: responseDataType)
+        let requestType = handlerRequestType()
+        let responseType = handlerResponseType()
         return """
         export type \(operationTypeName)Handler<Bindings extends GeneratedSchemaBindings = {}> = (input: GeneratedHandlerInput<Bindings[\"\(handlerName)\"], \(requestType)>) => GeneratedHandlerOutput<Bindings[\"\(handlerName)\"], \(responseType)>;
         """
@@ -51,38 +47,137 @@ struct TypeScriptBackendOperationEmitter {
     }
 
     func routeSource() -> String {
-        guard let requestType = operation.request.dataType,
-              let responseType = operation.response.dataType else {
-            return ""
-        }
-        let requestName = models.typeDeclaration(for: requestType)
-        let requestDecoder = models.decodeExpression(for: requestType, value: "parseJsonBody(request.body)")
-        let responseName = models.typeDeclaration(for: responseType)
-        let responseEncoder = models.encodeRootExpression(for: responseType, value: "publicOutput")
         let path = relativePath()
         let method = operation.method.rawValue
         let status = operation.acceptableStatuses.first ?? 200
+        let routeParser = requestParser().map { ", \($0)" } ?? ""
         return """
-            app.\(method)(\(path.backendStringLiteral), options?.jsonBodyParser ?? express.raw({ type: "application/json" }), async (request, response, next) => {
-                let input: GeneratedHandlerInput<Bindings["\(handlerName)"], \(requestName)>;
+            app.\(method)(\(path.backendStringLiteral)\(routeParser), async (request, response, next) => {
+                let input: GeneratedHandlerInput<Bindings["\(handlerName)"], \(handlerRequestType())>;
                 try {
-                    const decodedInput = \(requestDecoder);
-                    input = (bindings?.\(handlerName)?.input ? bindings.\(handlerName).input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["\(handlerName)"], \(requestName)>;
+            \(requestDecodeLines().prepad(4))
                 } catch {
                     response.status(400).json({ error: "Invalid request" });
                     return;
                 }
 
                 try {
-                    const output = await handlers.\(handlerName)(input);
-                    const publicOutput = (bindings?.\(handlerName)?.output ? bindings.\(handlerName).output.parse(output) : output) as GeneratedWireOutput<Bindings["\(handlerName)"], \(responseName)>;
-                    const body = \(responseEncoder);
-                    response.status(\(status)).type("application/json").send(stringifyJsonResponse(body));
+                    const output = normalizeGeneratedResponse(await handlers.\(handlerName)(input), \(status));
+                    validateGeneratedResponseStatus(output.status, [\(operation.acceptableStatuses.map(String.init).joined(separator: ", "))]);
+                    for (const [name, value] of Object.entries(output.headers)) {
+                        response.setHeader(name, value);
+                    }
+            \(responseHandling().prepad(4))
                 } catch (error) {
                     next(error);
                 }
             });
         """
+    }
+
+    private func handlerRequestType() -> String {
+        switch operation.request {
+            case .none:
+                "void"
+            case .binary,
+                 .file:
+                "Uint8Array"
+            case let .json(dataType):
+                dataType.map { models.typeDeclaration(for: $0) } ?? "void"
+            case .multiPart:
+                "unknown"
+        }
+    }
+
+    private func handlerResponseType() -> String {
+        switch operation.response {
+            case .none:
+                "void"
+            case .binary:
+                "Uint8Array"
+            case let .json(dataType):
+                dataType.map { models.typeDeclaration(for: $0) } ?? "void"
+        }
+    }
+
+    private func requestParser() -> String? {
+        switch operation.request {
+            case .none:
+                nil
+            case .json:
+                "options?.jsonBodyParser ?? express.raw({ type: \"application/json\" })"
+            case let .binary(mimeType):
+                "options?.rawBodyParser ?? express.raw({ type: \(mimeType.backendStringLiteral) })"
+            case .file:
+                "options?.rawBodyParser ?? express.raw({ type: \"*/*\" })"
+            case .multiPart:
+                nil
+        }
+    }
+
+    private func requestDecodeLines() -> String {
+        switch operation.request {
+            case .none:
+                return "input = undefined as GeneratedHandlerInput<Bindings[\"\(handlerName)\"], void>;"
+            case let .json(dataType):
+                guard let dataType else {
+                    return "input = undefined as GeneratedHandlerInput<Bindings[\"\(handlerName)\"], void>;"
+                }
+                let requestType = models.typeDeclaration(for: dataType)
+                let requestDecoder = models.decodeExpression(for: dataType, value: "parseJsonBody(request.body)")
+                return """
+                const decodedInput = \(requestDecoder);
+                input = (bindings?.\(handlerName)?.input ? bindings.\(handlerName).input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["\(handlerName)"], \(requestType)>;
+                """
+            case .binary,
+                 .file:
+                return """
+                if (!(request.body instanceof Uint8Array)) {
+                    throw new Error("Invalid raw request body");
+                }
+                input = request.body as GeneratedHandlerInput<Bindings["\(handlerName)"], Uint8Array>;
+                """
+            case .multiPart:
+                return "input = undefined as GeneratedHandlerInput<Bindings[\"\(handlerName)\"], void>;"
+        }
+    }
+
+    private func responseHandling() -> String {
+        switch operation.response {
+            case .none:
+                return """
+                if (output.value !== undefined) {
+                    throw new Error("Bodyless response cannot include a response value");
+                }
+                response.status(output.status).end();
+                """
+            case let .binary(mimeType):
+                return """
+                if (!(output.value instanceof Uint8Array)) {
+                    throw new Error("Invalid raw response body");
+                }
+                if (!generatedResponseHasBody(output.status)) {
+                    response.status(output.status).end();
+                    return;
+                }
+                response.status(output.status).type(\(mimeType.backendStringLiteral)).send(output.value);
+                """
+            case let .json(dataType):
+                guard let dataType else {
+                    return "response.status(output.status).end();"
+                }
+                let responseType = models.typeDeclaration(for: dataType)
+                let responseEncoder = models.encodeRootExpression(for: dataType, value: "publicOutput")
+                return """
+                const publicOutput = (bindings?.\(handlerName)?.output ? bindings.\(handlerName).output.parse(output.value) : output.value) as GeneratedWireOutput<Bindings["\(handlerName)"], \(responseType)>;
+                const body = \(responseEncoder);
+                if (!generatedResponseHasBody(output.status)) {
+                    response.status(output.status).end();
+                    return;
+                }
+                response.status(output.status).type("application/json").send(stringifyJsonResponse(body));
+                """
+        }
     }
 
     private func relativePath() -> String {
@@ -137,11 +232,15 @@ struct TypeScriptBackendRoutesEmitter {
             parseJsonBody,
             parseNarrowInteger,
             parseURL,
+            generatedResponseHasBody,
+            normalizeGeneratedResponse,
             serializeDate,
             serializeURL,
             stringifyJsonResponse,
+            validateGeneratedResponseStatus,
             uint8ArrayToBase64
         } from "./runtime.js";
+        import { type GeneratedResponse } from "./runtime.js";
         import {
             \(imports)
         } from "./models.js";
@@ -155,6 +254,7 @@ struct TypeScriptBackendRoutesEmitter {
 
         export interface GeneratedRouteOptions {
             jsonBodyParser?: RequestHandler;
+            rawBodyParser?: RequestHandler;
         }
 
         export interface GeneratedSchemaBindings {
@@ -165,9 +265,13 @@ struct TypeScriptBackendRoutesEmitter {
             ? NonNullable<Schema> extends z.ZodTypeAny ? z.output<NonNullable<Schema>> : Default
             : Default;
 
-        export type GeneratedHandlerOutput<Binding, Default> = Binding extends { output?: infer Schema }
+        export type GeneratedHandlerValue<Binding, Default> = Binding extends { output?: infer Schema }
             ? NonNullable<Schema> extends z.ZodTypeAny ? z.input<NonNullable<Schema>> | Promise<z.input<NonNullable<Schema>>> : Default | Promise<Default>
             : Default | Promise<Default>;
+
+        export type GeneratedHandlerOutput<Binding, Default> = GeneratedHandlerValue<Binding, Default>
+            | GeneratedResponse<Awaited<GeneratedHandlerValue<Binding, Default>>>
+            | Promise<GeneratedResponse<Awaited<GeneratedHandlerValue<Binding, Default>>> | Awaited<GeneratedHandlerValue<Binding, Default>>>;
 
         export type GeneratedWireOutput<Binding, Default> = Binding extends { output?: infer Schema }
             ? NonNullable<Schema> extends z.ZodTypeAny ? z.output<NonNullable<Schema>> : Default

@@ -27,9 +27,9 @@ public enum TypeScriptBackendGeneratorError: Error, LocalizedError, Equatable {
             case let .unsupportedPath(operationName):
                 "TypeScript backend operation \(operationName) must use a relative path"
             case let .unsupportedRequest(operationName):
-                "TypeScript backend operation \(operationName) must use a JSON request body"
+                "TypeScript backend operation \(operationName) must use a supported request body (none, JSON, raw binary, or file)"
             case let .unsupportedResponse(operationName):
-                "TypeScript backend operation \(operationName) must use a JSON response body"
+                "TypeScript backend operation \(operationName) must use a supported response body (none, JSON, or raw binary)"
             case let .unsupportedDataType(description):
                 "TypeScript backend does not support \(description) in this slice"
             case let .unresolvedExternalType(typeName):

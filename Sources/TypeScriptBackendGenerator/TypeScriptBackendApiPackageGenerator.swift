@@ -59,11 +59,26 @@ public struct TypeScriptBackendApiPackageGenerator {
             guard case .relative = operation.path else {
                 throw TypeScriptBackendGeneratorError.unsupportedPath(operationName: operation.name)
             }
-            guard case let .json(requestType) = operation.request, requestType != nil else {
-                throw TypeScriptBackendGeneratorError.unsupportedRequest(operationName: operation.name)
+            switch operation.request {
+                case let .json(requestType):
+                    guard requestType != nil else {
+                        throw TypeScriptBackendGeneratorError.unsupportedRequest(operationName: operation.name)
+                    }
+                case .multiPart:
+                    throw TypeScriptBackendGeneratorError.unsupportedRequest(operationName: operation.name)
+                case .none,
+                     .binary,
+                     .file:
+                    break
             }
-            guard case let .json(responseType) = operation.response, responseType != nil else {
-                throw TypeScriptBackendGeneratorError.unsupportedResponse(operationName: operation.name)
+            switch operation.response {
+                case let .json(responseType):
+                    guard responseType != nil else {
+                        throw TypeScriptBackendGeneratorError.unsupportedResponse(operationName: operation.name)
+                    }
+                case .none,
+                     .binary:
+                    break
             }
             guard !operation.acceptableStatuses.isEmpty else {
                 throw TypeScriptBackendGeneratorError.invalidPackage(reason: "operation \(operation.name) has no acceptable status")
