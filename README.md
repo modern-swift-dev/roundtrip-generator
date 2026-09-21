@@ -82,6 +82,17 @@ To regenerate only the native Android client:
 (cd samples && swift run --package-path cli cli --android-only)
 ```
 
+To regenerate and exercise only the Express/Zod backend compatibility sample:
+
+```sh
+(cd samples && swift run --package-path cli cli --backend-only)
+npm install --prefix samples/typescript-backend --ignore-scripts --package-lock=false
+npm run --prefix samples/typescript-backend build
+node samples/typescript-backend/test.mjs
+```
+
+The [TypeScript backend compatibility matrix](docs/api-generation.md#compatibility-matrix) lists the public compile and HTTP fixture for every applicable shared mapping capability and the approved URL exclusion.
+
 ## Validation
 
 ```sh

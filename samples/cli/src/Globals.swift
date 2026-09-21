@@ -78,24 +78,104 @@ extension ApiPackage {
 
     static let globalBackend: ApiPackage = {
         let currentDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let message = ApiTypeSchema.object(
-            typeName: "Message",
-            properties: [.string("message_text", propertyName: "messageText")],
+        let profile = ApiTypeSchema.object(
+            typeName: "Profile",
+            properties: [
+                .uuid("id"),
+                .string("first_name", propertyName: "firstName"),
+                .string("biography", required: false),
+                .date("created_at", propertyName: "createdAt"),
+                .string("private_geometry").unpublished,
+                .string("private_payment_token").unpublished
+            ],
         )
-        let operation = ApiOperation.post(
-            name: "echo",
-            path: .relative("/messages"),
+        let profilePatch = ApiTypeSchema.object(
+            typeName: "ProfilePatch",
+            properties: [
+                ApiModelProperty(rawName: "first_name", propertyName: "firstName", dataType: .string().asPatchable),
+                ApiModelProperty(rawName: "biography", propertyName: "biography", dataType: .string().asPatchable)
+            ],
+        )
+        let photoReceipt = ApiTypeSchema.object(
+            typeName: "PhotoReceipt",
+            properties: [
+                .uuid("profile_id", propertyName: "profileId"),
+                .int32("byte_count", propertyName: "byteCount")
+            ],
+        )
+        let ledgerEntry = ApiTypeSchema.object(
+            typeName: "LedgerEntry",
+            properties: [
+                .string("entry_name", propertyName: "entryName"),
+                .int64("amount"),
+                .date("captured_at", propertyName: "capturedAt"),
+                .binary("evidence")
+            ],
+        )
+        let ledgerBatch = ApiTypeSchema.object(
+            typeName: "LedgerBatch",
+            properties: [
+                .arrayOfRef("entries", of: ledgerEntry),
+                .keyedByString("totals", valueType: .uint64()),
+                .int64("private_balance").unpublished
+            ],
+        )
+        let getProfile = ApiOperation.get(
+            name: "getProfile",
+            path: .relative("/profiles/{profile_id}"),
+            security: .secured,
+            parameters: [
+                .path("profile_id", .string(), propertyName: "profileId"),
+                .query("fields", .stringArray()).optional
+            ],
+            response: profile.asRef,
+            acceptableStatuses: [200],
+        )
+        let patchProfile = ApiOperation.patch(
+            name: "patchProfile",
+            path: .relative("/profiles/{profile_id}"),
+            security: .secured,
+            parameters: [.path("profile_id", .string(), propertyName: "profileId")],
+            request: profilePatch.asRef,
+            response: profilePatch.asRef,
+            acceptableStatuses: [200],
+        )
+        let uploadPhoto = ApiOperation.postMultipart(
+            name: "uploadProfilePhoto",
+            path: .relative("/profiles/{profile_id}/photo"),
+            security: .secured,
+            parameters: [.path("profile_id", .string(), propertyName: "profileId")],
+            multiParts: ["file", "metadata"],
+            response: photoReceipt.asRef,
+            acceptableStatuses: [201],
+        )
+        let processLedger = ApiOperation.post(
+            name: "processLedger",
+            path: .relative("/profiles/{profile_id}/ledger"),
+            security: .secured,
+            parameters: [.path("profile_id", .string(), propertyName: "profileId")],
+            request: ledgerBatch.asRef,
+            response: ledgerBatch.asRef,
+            acceptableStatuses: [200],
+        )
+        let rawReceipts = ApiOperation.post(
+            name: "rawReceipts",
+            path: .relative("/receipts/raw"),
             security: .unsecured,
-            request: message.asRef,
-            response: message.asRef,
+            requestType: .binary(mimeType: "multipart/form-data"),
+            responseType: .binary(mimeType: "multipart/form-data"),
             acceptableStatuses: [200],
         )
         return ApiPackage(
             name: "BackendExample",
             targetDirUrl: currentDir.appendingPathComponent("typescript-backend"),
             modules: [
-                ApiModule(name: "Demo", definitions: [
-                    ApiService(name: "Messages", operations: [operation], references: [message])
+                ApiModule(name: "Future", definitions: [
+                    ApiService(
+                        name: "Profiles",
+                        operations: [getProfile, patchProfile, uploadPhoto, processLedger, rawReceipts],
+                        references: [profile, profilePatch, photoReceipt, ledgerBatch, ledgerEntry],
+                    )
                 ])
             ],
         )

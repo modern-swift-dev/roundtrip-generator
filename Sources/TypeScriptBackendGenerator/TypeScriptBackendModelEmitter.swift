@@ -386,7 +386,7 @@ struct TypeScriptBackendModelEmitter {
                 return dataType.map(schemaExpression(for:)) ?? "z.unknown()"
             case let .genericReference(typeName, types):
                 if typeName == "PatchableValue", let valueType = types.first {
-                    return "z.discriminatedUnion(\"state\", [z.object({ state: z.literal(\"unmodified\") }), z.object({ state: z.literal(\"modified\"), value: \(schemaExpression(for: valueType)).nullable() })])"
+                    return "\(schemaExpression(for: valueType)).nullable()"
                 } else if typeName == "PagedResults", let valueType = types.first {
                     return "PagedResultsWireSchema(\(schemaExpression(for: valueType)))"
                 }
@@ -434,9 +434,9 @@ struct TypeScriptBackendModelEmitter {
                 expression = dataType.map { decodeExpression(for: $0, value: value) } ?? "\(value) as unknown"
             case let .genericReference(typeName, types):
                 if typeName == "PatchableValue", let valueType = types.first {
-                    let patch = "(\(schemaExpression(for: dataType)).parse(\(value)) as { state: \"unmodified\" } | { state: \"modified\"; value: unknown })"
-                    let decodedValue = "patch.value == null ? null : \(decodeExpression(for: valueType, value: "patch.value"))"
-                    expression = "(() => { const patch = \(patch); if (patch.state === \"unmodified\") return { state: \"unmodified\" }; return { state: \"modified\", value: \(decodedValue) }; })()"
+                    let patchValue = "\(schemaExpression(for: dataType)).parse(\(value))"
+                    let decodedValue = "patchValue == null ? null : \(decodeExpression(for: valueType, value: "patchValue"))"
+                    expression = "(() => { const patchValue = \(patchValue); return { state: \"modified\", value: \(decodedValue) }; })()"
                 } else if typeName == "PagedResults", let valueType = types.first {
                     let decodedItem = decodeExpression(for: valueType, value: "item")
                     expression = "(() => { const pagedResultsObject = \(schemaExpression(for: dataType)).parse(\(value)) as { results: unknown[]; next?: string | null; count?: number | null }; return { results: pagedResultsObject.results.map((item) => \(decodedItem)), next: pagedResultsObject.next, count: pagedResultsObject.count }; })()"
@@ -474,7 +474,7 @@ struct TypeScriptBackendModelEmitter {
                     return value
                 }
                 let encodedValue = encodeExpression(for: valueType, value: "\(value).value")
-                return "(\(value).state === \"unmodified\" ? \(value) : { state: \"modified\", value: \(value).value == null ? null : \(encodedValue) })"
+                return "(\(value).state === \"unmodified\" ? undefined : \(value).value == null ? null : \(encodedValue))"
             case let .genericReference(typeName, types) where typeName == "PagedResults":
                 guard let valueType = types.first else {
                     return value

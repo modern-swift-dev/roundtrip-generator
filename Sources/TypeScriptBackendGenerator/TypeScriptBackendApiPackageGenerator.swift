@@ -333,7 +333,7 @@ public struct TypeScriptBackendApiPackageGenerator {
           "devDependencies": {
             "@types/express": "^5.0.5",
             "@types/node": "^24.0.0",
-            "typescript": "^5.9.0"
+            "typescript": "^6.0.0"
           }
         }
         """

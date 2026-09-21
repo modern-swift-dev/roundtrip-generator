@@ -553,7 +553,7 @@ For a separate generated project, use Gradle 9.5.1 or provision its wrapper. Pub
 
 ## TypeScript Backend Integration
 
-Use `TypeScriptBackendApiPackageGenerator` for an Express 5 and Zod 4 backend package. Generated routes support secured, optional-authentication, and unsecured relative operations. They parse and validate wire input, convert it to a mapped DTO for an application-owned handler, validate and serialize the handler result, and strip undeclared fields at both boundaries.
+Use `TypeScriptBackendApiPackageGenerator` for an Express 5, Zod 4, Node 24, and TypeScript 6 backend package. Generated routes support secured, optional-authentication, and unsecured relative operations. They parse and validate wire input, convert it to a mapped DTO for an application-owned handler, validate and serialize the handler result, and strip undeclared fields at both boundaries.
 
 ```swift
 import TypeScriptBackendGenerator
@@ -610,11 +610,11 @@ For each operation, policy middleware runs in declaration order, followed by con
 
 Application middleware, context resolvers, and endpoint handlers retain their original thrown errors. Generated input and output validation failures reach the Express error boundary as `GeneratedValidationError`, with `operationId`, `phase` (`"input"` or `"output"`), and `cause`. Install application error middleware after generated route registration to choose status codes, error codes, validation mappings, and response envelopes. Generated output is fully validated and serialized before its declared response headers are applied.
 
-Operations with declared route parameters receive a typed input object containing each mapped parameter property and, when present, a `body` property. Path, query, header, and cookie values are read using their declared wire names; header lookup is case-insensitive and percent-encoded cookie values are decoded once. Required values, scalar ranges, booleans, dates, times, enums, and comma-separated arrays are validated before the handler runs. Query, header, and cookie arrays use the same comma-separated encoding as the generated Swift client: an empty string is an empty array, an omitted optional value is `undefined`, and commas inside string elements are therefore not distinguishable from separators. Swift client initializer defaults are not applied when an HTTP parameter is omitted; only the declared requiredness controls whether omission is rejected or yields `undefined`.
+Operations with declared route parameters receive a typed input object containing each mapped parameter property and, when present, a `body` property. Path, query, header, and cookie values are read using their declared wire names; header lookup is case-insensitive and percent-encoded cookie values are decoded once. Required values, scalar ranges, booleans, dates, times, enums, and comma-separated arrays are validated before the handler runs. Query, header, and cookie arrays use the same comma-separated encoding as the generated Swift client. That client omits an empty optional array; the backend also accepts an explicit empty string defensively as an empty array. An omitted optional value is `undefined`, and commas inside string elements are not distinguishable from separators. Swift client initializer defaults are not applied when an HTTP parameter is omitted; only the declared requiredness controls whether omission is rejected or yields `undefined`.
 
 Generated routes use `express.raw({ type: "application/json" })` and the generated `lossless-json` runtime so wide integer fields remain exact JSON numbers. Register the generated routes before installing a broad `app.use(express.json())` middleware; an earlier ordinary JSON parser would already have rounded wide integers. Narrow integer fields are range-checked before conversion to `number`.
 
-Mapped scalar fields use `Date` for ISO-8601 instants, `URL` for valid URL strings, and `Uint8Array` for padded base64 JSON values. UUIDs, `YYYY-MM-DD` calendar dates, and local `HH:mm:ss` values remain strings; invalid scalar formats are rejected at the generated route boundary. Raw binary request/response transport is a separate capability.
+Mapped scalar fields use `Date` for ISO-8601 instants, `URL` for valid URL strings, and `Uint8Array` for padded base64 JSON values. The pinned Swift client emits UTC instants such as `2026-09-21T12:34:56Z`, padded base64 such as `AQID`, `YYYY-MM-DD` calendar dates, and local `HH:mm:ss` values. UUIDs, calendar dates, and local times remain strings; invalid scalar formats are rejected at the generated route boundary. Raw binary request/response transport is a separate capability.
 
 Nested DTO references, arrays, and string-keyed dictionaries are converted recursively between Swift property names and their wire names. Shared references are emitted once and reused across the package, module, and service declarations. Optional properties preserve the distinction between a missing value and `null`; nullable dictionary entries preserve their declared keys and values. Object fields that are not declared in the DTO are stripped recursively at the boundary, while dictionary entries remain data owned by the dictionary.
 
@@ -622,7 +622,7 @@ Declared string and integer enums are validated at both HTTP boundaries using th
 
 Dynamic-object DTOs use the declared discriminator and variant raw values to select a type-safe payload. The primary payload key is preferred and the configured alternate key is accepted on input; responses always use the primary key. Embedded (`__self__`) payloads are decoded from the envelope and emitted alongside the discriminator. Unknown variants and malformed payloads fail validation, even when the Swift schema enables garbage tolerance; declared extra properties and dictionary contents remain available while undeclared fields are stripped.
 
-Patch DTO properties use the built-in three-state shape: an omitted property is unchanged, `{ state: "unmodified" }` is also unchanged when supplied explicitly, and `{ state: "modified", value: ... }` assigns a value or deletes it when `value` is `null`. Generated patch routes omit unchanged properties in responses, preserve nested wire-name mappings, and keep ordinary optional fields and nullable dictionary entries separate from patch state.
+Patch DTO wire values follow the Swift client contract: an omitted property is unchanged, a concrete property value is assigned, and `null` deletes it. Handlers receive those states type-safely as an omitted/`undefined` property or `{ state: "modified", value: ... | null }`; a handler may return `{ state: "unmodified" }` to omit a property from the response. Generated patch routes preserve nested wire-name mappings and keep ordinary optional fields and nullable dictionary entries separate from patch state.
 
 Application-owned refinements and transformations are supplied as a third argument to `registerGeneratedRoutes`. Each operation may provide an `input` Zod schema, which receives the generated mapped DTO after structural decoding and may transform it into the handler's application type, and an `output` Zod schema, which receives the handler's application value and must transform it into the generated DTO before wire encoding:
 
@@ -645,18 +645,19 @@ registerGeneratedRoutes(app, handlers, bindings);
 
 When an external or generic operation has a known application value shape, use the optional type parameters on `GeneratedOperationBinding<HandlerInput, HandlerOutput, WireOutput>` to make the binding contract compile-time checked. The input schema's transformed output must match `HandlerInput`, and the output schema's input and transformed output must match `HandlerOutput` and `WireOutput`; this also preserves nested generic arguments such as `PagedResults<string>`. The unparameterized form remains available for operations whose application shape is intentionally open, while runtime parsing is still required for every external or generic payload.
 
-Generate and validate the package with:
+Run the complete backend validation workflow with:
 
 ```sh
-npm install --prefix generated/backend
-npm run --prefix generated/backend build
-ROUNDTRIP_BACKEND_RUNTIME_TEST=1 swift test --filter TypeScriptBackendGeneratedPackageTests/generatedPackageCompilesAndServesItsRoute
-ROUNDTRIP_BACKEND_RUNTIME_TEST=1 swift test --filter TypeScriptBackendGeneratedPackageTests/generatedPackagePreservesRawAndBodylessTransport
-ROUNDTRIP_BACKEND_RUNTIME_TEST=1 swift test --filter TypeScriptBackendGeneratedPackageTests/generatedPackageIntegratesAuthenticationContextAndApplicationErrors
-ROUNDTRIP_BACKEND_RUNTIME_TEST=1 swift test --filter TypeScriptBackendGeneratedPackageTests/generatedPackageServesStructuredAndRawMultipartRequests
+swift test
+ROUNDTRIP_BACKEND_RUNTIME_TEST=1 swift test --filter TypeScriptBackendGeneratorTests
+swift build --package-path samples/cli
+(cd samples && swift run --package-path cli cli --backend-only)
+npm install --prefix samples/typescript-backend --ignore-scripts --package-lock=false
+npm run --prefix samples/typescript-backend build
+node samples/typescript-backend/test.mjs
 ```
 
-The generated-package HTTP test is opt-in because it installs the reference Express/Zod dependency environment; the command above runs the strict TypeScript build and HTTP assertions explicitly.
+The generated-package HTTP tests are opt-in because they install the reference Express/Zod dependency environment. The focused command runs strict TypeScript 6 compilation and every generated-package HTTP fixture, including the numeric/root-body matrix and all parameter locations and types.
 
 The repository's executable backend sample is generated with:
 
@@ -668,6 +669,31 @@ node samples/typescript-backend/test.mjs
 ```
 
 The sample's generated files live under `src/generated`; its handwritten `src/server.ts` owns server startup and handlers, while generated `src/app.ts` supplies the minimal Express application and route-registration bootstrap. Regeneration does not replace the server or HTTP test. Use `TypeScriptBackendGeneratorOptions.existingProject(sourceDirectory: "src/generated")` when the host already owns its package and bootstrap; in that mode only generated runtime, models, routes, and index files are written. Standalone mode owns the package manifest, TypeScript configuration, root export, and `createApp` bootstrap in addition to the generated sources. Hosts may pass `GeneratedRouteOptions.jsonBodyParser` (or install their own application middleware before registration) when parser behavior or ordering needs to differ; the default remains the lossless raw-body parser.
+
+### Compatibility matrix
+
+The executable sample and generated-package fixtures form the compatibility matrix below. Fixture names are Swift test method names in `TypeScriptBackendGeneratedPackageTests`; all assertions cross the public generated TypeScript or HTTP boundary.
+
+| Shared mapping capability | Passing fixture |
+| --- | --- |
+| Standalone/existing layouts, deterministic preview, managed-file safety, stale cleanup | `TypeScriptBackendGeneratorTests` ownership and regeneration tests; `samples/generate.sh` checksum validation |
+| String, bool, floating point, every signed/unsigned integer width and boundary | `generatedPackageCompilesAndServesItsRoute`; `generatedPackageServesCompleteNumericAndRootBodyMatrix` |
+| Exact wide JSON numbers, nested arrays/dictionaries, and application transformations | `generatedPackageCompilesAndServesItsRoute`; sample `POST /profiles/{profile_id}/ledger` |
+| UUID, ISO-8601 instant, URL, padded base64, calendar date, and local time | `generatedPackageCompilesAndServesItsRoute`; sample profile and ledger routes use the pinned Swift wire forms |
+| Root primitive, array, and dictionary JSON bodies | `generatedPackageServesCompleteNumericAndRootBodyMatrix` |
+| Nested objects, arrays, dictionaries, nullable entries, optional/null fields, and shared references | `generatedPackageCompilesAndServesItsRoute` |
+| Mapped names, unpublished fields, and recursive private-field projection | `generatedPackageServesCompleteNumericAndRootBodyMatrix`; sample profile output removes geometry/payment values |
+| String/integer enums, exact wide enum values, defaults, and invalid-value rejection | `generatedPackageCompilesAndServesItsRoute` |
+| Dynamic primary/alternate/embedded payload layouts, mapped variant fields, extras, and invalid variants | `generatedPackageCompilesAndServesItsRoute` |
+| External and generic runtime schemas, projection, transformed handler types, and incompatible bindings | `generatedPackageCompilesAndServesItsRoute` compile and HTTP fixtures |
+| Three-state patch omission/assignment/deletion with nested and mapped fields | `generatedPackageCompilesAndServesItsRoute`; sample `PATCH /profiles/{profile_id}` uses Swift-compatible wire values |
+| Every parameter location and datatype, comma arrays, path/cookie escaping, required/optional values | `generatedPackageBindsRouteParametersOverHTTP` |
+| GET/POST/PUT/PATCH/DELETE, JSON, bodyless, raw/file bytes, MIME types, statuses, and headers | `generatedPackagePreservesRawAndBodylessTransport`; `generatedPackageServesCompleteNumericAndRootBodyMatrix` |
+| Secured/optional/unsecured policies, typed context, middleware/parser order, custom errors, and invalid-output rejection | `generatedPackageIntegratesAuthenticationContextAndApplicationErrors`; executable sample profile routes |
+| Structured multipart required/additional parts and application upload rejection | `generatedPackageServesStructuredAndRawMultipartRequests`; sample profile-photo route |
+| Repeated receipt parts requiring byte-exact raw multipart | `generatedPackageServesStructuredAndRawMultipartRequests`; sample `POST /receipts/raw` |
+| Absolute and runtime operation URLs | Explicitly excluded and rejected by `generatedBackendRejectsAbsoluteAndRuntimeOperationPaths`; the runtime receipt-image operation has no fabricated backend route |
+| Swift protocols, imports, and value/reference implementation choices | Not applicable to the TypeScript runtime, per the accepted generation-boundary decision |
 
 Raw and file-body operations use `Uint8Array` at the handler boundary. Binary request bodies use `express.raw` with the declared MIME type; file requests use a wildcard raw parser. A binary operation declaring `application/json` still remains raw and is not decoded as JSON. Existing applications may replace these parsers with `GeneratedRouteOptions.rawBodyParser`, while `jsonBodyParser` remains available for JSON routes. The route-local hooks make parser placement configurable, but an application-wide parser installed earlier has already consumed the bytes and cannot be undone; install broad parsers only after generated registration when their ordering would otherwise consume a declared raw body.
 

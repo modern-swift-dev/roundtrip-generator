@@ -377,6 +377,91 @@ struct TypeScriptBackendGeneratedPackageTests {
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
+    func generatedPackageServesCompleteNumericAndRootBodyMatrix() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let matrix = ApiTypeSchema.object(
+            typeName: "NumericMatrix",
+            properties: [
+                .int("platform_signed", propertyName: "platformSigned"),
+                .uint("platform_unsigned", propertyName: "platformUnsigned"),
+                .int8("tiny_signed", propertyName: "tinySigned"),
+                .int16("small_signed", propertyName: "smallSigned"),
+                .int32("medium_signed", propertyName: "mediumSigned"),
+                .uint8("tiny_unsigned", propertyName: "tinyUnsigned"),
+                .uint16("small_unsigned", propertyName: "smallUnsigned"),
+                .uint32("medium_unsigned", propertyName: "mediumUnsigned"),
+                .array("wide_values", propertyName: "wideValues", of: .int64()),
+                .array("unsigned_values", propertyName: "unsignedValues", of: .uint64()),
+                .keyedByString("wide_map", propertyName: "wideMap", valueType: .int64()),
+                .string("internal_note", propertyName: "internalNote").unpublished
+            ],
+        )
+        let operations = [
+            ApiOperation.post(
+                name: "echoMatrix",
+                path: .relative("/matrix"),
+                security: .unsecured,
+                request: matrix.asRef,
+                response: matrix.asRef,
+            ),
+            ApiOperation(
+                name: "putWide",
+                method: .put,
+                path: .relative("/root/wide"),
+                security: .unsecured,
+                parameters: [],
+                request: .json(.int64()),
+                response: .json(.int64()),
+                acceptableStatuses: [200],
+                extraImports: [],
+            ),
+            ApiOperation(
+                name: "deleteArray",
+                method: .delete,
+                path: .relative("/root/array"),
+                security: .unsecured,
+                parameters: [],
+                request: .json(.array(.uint32())),
+                response: .json(.array(.uint32())),
+                acceptableStatuses: [200],
+                extraImports: [],
+            ),
+            ApiOperation.post(
+                name: "echoDictionary",
+                path: .relative("/root/dictionary"),
+                security: .unsecured,
+                request: .keyedByString(.int16()),
+                response: .keyedByString(.int16()),
+            )
+        ]
+        let package = ApiPackage(
+            name: "MatrixExample",
+            targetDirUrl: root,
+            modules: [
+                ApiModule(name: "Matrix", definitions: [
+                    ApiService(name: "Scalars", operations: operations, references: [matrix])
+                ])
+            ],
+        )
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for file in try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles() {
+            try file.write(to: root)
+        }
+        try numericMatrixTypeFixture().write(
+            to: root.appendingPathComponent("src/matrix-fixture.ts"),
+            atomically: true,
+            encoding: .utf8,
+        )
+        try numericMatrixRuntimeTest().write(to: root.appendingPathComponent("test.mjs"), atomically: true, encoding: .utf8)
+
+        try run(["install", "--ignore-scripts", "--package-lock=false"], in: root)
+        try run(["run", "build"], in: root)
+        try run(["exec", "--", "node", "test.mjs"], in: root)
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
     func generatedPackageBindsRouteParametersOverHTTP() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -451,10 +536,33 @@ struct TypeScriptBackendGeneratedPackageTests {
             acceptableStatuses: [200],
             extraImports: [],
         )
+        let numericParameterOperation = ApiOperation.get(
+            name: "inspectNumericParameters",
+            path: .relative("/numeric-parameters"),
+            security: .unsecured,
+            parameters: [
+                .query("signed", .int()),
+                .query("signed_array", .intArray(), propertyName: "signedArray"),
+                .query("small_signed", .int16(), propertyName: "smallSigned"),
+                .query("small_signed_array", .int16Array(), propertyName: "smallSignedArray"),
+                .query("medium_signed_array", .int32Array(), propertyName: "mediumSignedArray"),
+                .query("unsigned", .uint()),
+                .query("unsigned_array", .uintArray(), propertyName: "unsignedArray"),
+                .query("small_unsigned_array", .uint16Array(), propertyName: "smallUnsignedArray"),
+                .query("medium_unsigned", .uint32(), propertyName: "mediumUnsigned"),
+                .query("medium_unsigned_array", .uint32Array(), propertyName: "mediumUnsignedArray"),
+                .query("large_unsigned", .uint64(), propertyName: "largeUnsigned"),
+                .query("large_unsigned_array", .uint64Array(), propertyName: "largeUnsignedArray")
+            ],
+            response: .string(),
+        )
         let package = ApiPackage(
             name: "ParameterExample",
             targetDirUrl: root,
-            modules: [ApiModule(name: "Admin", definitions: [ApiService(name: "Users", operations: [operation, escapedPathOperation], references: [observed, state, magnitude])])],
+            modules: [ApiModule(
+                name: "Admin",
+                definitions: [ApiService(name: "Users", operations: [operation, escapedPathOperation, numericParameterOperation], references: [observed, state, magnitude])]
+            )],
         )
 
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -1023,6 +1131,93 @@ struct TypeScriptBackendGeneratedPackageTests {
         """
     }
 
+    private func numericMatrixTypeFixture() -> String {
+        """
+        import type { GeneratedHandlers } from "./generated/routes.js";
+
+        export const handlers: GeneratedHandlers = {
+            matrixScalarsEchoMatrix: async (input) => ({ ...input, internalNote: "must not escape" }),
+            matrixScalarsPutWide: async (input) => input,
+            matrixScalarsDeleteArray: async (input) => input,
+            matrixScalarsEchoDictionary: async (input) => input
+        };
+
+        const wideHandler: GeneratedHandlers["matrixScalarsPutWide"] = async (input) => {
+            const exact: bigint = input;
+            // @ts-expect-error wide root bodies remain bigint
+            const rounded: number = input;
+            void exact;
+            void rounded;
+            return input;
+        };
+
+        void wideHandler;
+        """
+    }
+
+    private func numericMatrixRuntimeTest() -> String {
+        """
+        import assert from "node:assert/strict";
+        import express from "express";
+        import { registerGeneratedRoutes } from "./dist/generated/routes.js";
+        import { GeneratedValidationError } from "./dist/generated/runtime.js";
+        import { handlers } from "./dist/matrix-fixture.js";
+
+        const app = express();
+        registerGeneratedRoutes(app, handlers);
+        app.use((error, _request, response, _next) => {
+            response.status(error instanceof GeneratedValidationError && error.phase === "input" ? 400 : 500).end();
+        });
+        const server = app.listen(0);
+        await new Promise((resolve) => server.once("listening", resolve));
+        try {
+            const address = server.address();
+            const base = `http://127.0.0.1:${address.port}`;
+            const matrix = '{"platform_signed":9223372036854775807,"platform_unsigned":18446744073709551615,"tiny_signed":-128,"small_signed":-32768,"medium_signed":-2147483648,"tiny_unsigned":255,"small_unsigned":65535,"medium_unsigned":4294967295,"wide_values":[-9223372036854775808,9223372036854775807],"unsigned_values":[0,18446744073709551615],"wide_map":{"minimum":-9223372036854775808,"maximum":9223372036854775807},"internal_note":"private"}';
+            const matrixResponse = await fetch(`${base}/matrix`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: matrix
+            });
+            assert.equal(matrixResponse.status, 200);
+            assert.equal(await matrixResponse.text(), matrix.replace(',"internal_note":"private"', ""));
+
+            const wideResponse = await fetch(`${base}/root/wide`, {
+                method: "PUT",
+                headers: { "content-type": "application/json" },
+                body: "-9223372036854775808"
+            });
+            assert.equal(wideResponse.status, 200);
+            assert.equal(await wideResponse.text(), "-9223372036854775808");
+
+            const arrayResponse = await fetch(`${base}/root/array`, {
+                method: "DELETE",
+                headers: { "content-type": "application/json" },
+                body: "[0,4294967295]"
+            });
+            assert.equal(arrayResponse.status, 200);
+            assert.equal(await arrayResponse.text(), "[0,4294967295]");
+
+            const dictionaryResponse = await fetch(`${base}/root/dictionary`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: '{"minimum":-32768,"maximum":32767}'
+            });
+            assert.equal(dictionaryResponse.status, 200);
+            assert.equal(await dictionaryResponse.text(), '{"minimum":-32768,"maximum":32767}');
+
+            const outOfRange = await fetch(`${base}/root/dictionary`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: '{"invalid":32768}'
+            });
+            assert.equal(outOfRange.status, 400);
+        } finally {
+            await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        }
+        """
+    }
+
     private func parameterRuntimeTest() -> String {
         """
         import assert from "node:assert/strict";
@@ -1054,7 +1249,22 @@ struct TypeScriptBackendGeneratedPackageTests {
                     enabled: input.enabled
                 };
             },
-            adminUsersInspectFile: async (input) => input.fileName
+            adminUsersInspectFile: async (input) => input.fileName,
+            adminUsersInspectNumericParameters: async (input) => {
+                assert.equal(input.signed, -9223372036854775808n);
+                assert.deepEqual(input.signedArray, [-1n, 9223372036854775807n]);
+                assert.equal(input.smallSigned, -32768);
+                assert.deepEqual(input.smallSignedArray, [-32768, 32767]);
+                assert.deepEqual(input.mediumSignedArray, [-2147483648, 2147483647]);
+                assert.equal(input.unsigned, 18446744073709551615n);
+                assert.deepEqual(input.unsignedArray, [0n, 18446744073709551615n]);
+                assert.deepEqual(input.smallUnsignedArray, [0, 65535]);
+                assert.equal(input.mediumUnsigned, 4294967295);
+                assert.deepEqual(input.mediumUnsignedArray, [0, 4294967295]);
+                assert.equal(input.largeUnsigned, 18446744073709551615n);
+                assert.deepEqual(input.largeUnsignedArray, [0n, 18446744073709551615n]);
+                return "ok";
+            }
         };
         registerGeneratedRoutes(app, handlers);
         app.use((error, _request, response, _next) => {
@@ -1096,6 +1306,10 @@ struct TypeScriptBackendGeneratedPackageTests {
             const escapedPathBody = await escapedPath.text();
             assert.equal(escapedPath.status, 200, escapedPathBody);
             assert.equal(JSON.parse(escapedPathBody), "alpha beta");
+
+            const numericParameters = await fetch(`http://127.0.0.1:${address.port}/numeric-parameters?signed=-9223372036854775808&signed_array=-1,9223372036854775807&small_signed=-32768&small_signed_array=-32768,32767&medium_signed_array=-2147483648,2147483647&unsigned=18446744073709551615&unsigned_array=0,18446744073709551615&small_unsigned_array=0,65535&medium_unsigned=4294967295&medium_unsigned_array=0,4294967295&large_unsigned=18446744073709551615&large_unsigned_array=0,18446744073709551615`);
+            assert.equal(numericParameters.status, 200);
+            assert.equal(await numericParameters.text(), '"ok"');
 
             const emptyArray = await fetch(`http://127.0.0.1:${address.port}/users/1?include_tags=&state=ready&magnitude=9223372036854775807&flags=true,false&integers=1&states=ready&magnitudes=1&when=2026-09-21T12:34:56Z&date=2026-09-21&time=12:34:56&limit=1&small=1`, {
                 headers: { "x-trace": "trace-value", "x-enabled": "true", "cookie": "session_id=session" }
@@ -1278,6 +1492,17 @@ struct TypeScriptBackendGeneratedPackageTests {
                 return input;
             },
             adminUsersUpdate(input) {
+                if (input.profile !== undefined) {
+                    assert.equal(input.profile.state, "modified");
+                    assert.equal(input.profile.value?.address.streetName, "Main Street");
+                }
+                if (input.displayName !== undefined) {
+                    assert.equal(input.displayName.state, "modified");
+                    assert.equal(input.displayName.value, null);
+                }
+                if (input.nickname === "return-unmodified") {
+                    return { ...input, displayName: { state: "unmodified" } };
+                }
                 return input;
             },
             adminUsersTransform(input) {
@@ -1372,18 +1597,26 @@ struct TypeScriptBackendGeneratedPackageTests {
         const assignedPatch = await fetch(patchUrl, {
             method: "PATCH",
             headers: { "content-type": "application/json" },
-            body: '{"profile_data":{"state":"modified","value":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[],"labels":null,"nickname":null}},"labels":{"source":"test","removed":null}}'
+            body: '{"profile_data":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[],"labels":null,"nickname":null},"labels":{"source":"test","removed":null}}'
         });
         assert.equal(assignedPatch.status, 200);
-        assert.equal(await assignedPatch.text(), '{"profile_data":{"state":"modified","value":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[],"labels":null,"nickname":null}},"labels":{"source":"test","removed":null}}');
+        assert.equal(await assignedPatch.text(), '{"profile_data":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[],"labels":null,"nickname":null},"labels":{"source":"test","removed":null}}');
 
         const deletedPatch = await fetch(patchUrl, {
             method: "PATCH",
             headers: { "content-type": "application/json" },
-            body: '{"display_name":{"state":"modified","value":null},"profile_data":{"state":"unmodified"},"nickname":null,"labels":null}'
+            body: '{"display_name":null,"nickname":null,"labels":null}'
         });
         assert.equal(deletedPatch.status, 200);
-        assert.equal(await deletedPatch.text(), '{"display_name":{"state":"modified","value":null},"nickname":null,"labels":null}');
+        assert.equal(await deletedPatch.text(), '{"display_name":null,"nickname":null,"labels":null}');
+
+        const unmodifiedPatch = await fetch(patchUrl, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: '{"nickname":"return-unmodified"}'
+        });
+        assert.equal(unmodifiedPatch.status, 200);
+        assert.equal(await unmodifiedPatch.text(), '{"nickname":"return-unmodified"}');
 
         const transformed = await fetch(transformedUrl, {
             method: "POST",
@@ -1421,6 +1654,13 @@ struct TypeScriptBackendGeneratedPackageTests {
             body: '{"display_name":{"state":"modified","value":42}}'
         });
         assert.equal(malformedPatch.status, 400);
+
+        const applicationStateOnWire = await fetch(patchUrl, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: '{"display_name":{"state":"modified","value":"Ada"}}'
+        });
+        assert.equal(applicationStateOnWire.status, 400);
 
         const omittedOptional = await fetch(url, {
             method: "POST",

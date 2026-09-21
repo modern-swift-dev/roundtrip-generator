@@ -44,6 +44,7 @@ struct TypeScriptBackendGeneratorTests {
         let packageJSON = try #require(files.first { $0.relativePath == "package.json" }?.contents)
         #expect(packageJSON.contains(#""express": "^5.2.1""#))
         #expect(packageJSON.contains(#""zod": "^4.4.3""#))
+        #expect(packageJSON.contains(#""typescript": "^6.0.0""#))
         let app = try #require(files.first { $0.relativePath == "src/app.ts" }?.contents)
         #expect(app.contains("export function createApp"))
         let routesWithOptions = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
@@ -161,6 +162,19 @@ struct TypeScriptBackendGeneratorTests {
             )
 
             #expect(throws: TypeScriptBackendGeneratorError.invalidPackage(reason: "operation Upload has invalid multipart part names")) {
+                try TypeScriptBackendApiPackageGenerator(package: testPackage(operation: operation)).generatedFiles()
+            }
+        }
+    }
+
+    @Test func generatedBackendRejectsAbsoluteAndRuntimeOperationPaths() {
+        let operations = [
+            ApiOperation.get(name: "absoluteReceiptImage", path: .absolute("https://example.com/receipt.png"), security: .unsecured),
+            ApiOperation.get(name: "runtimeReceiptImage", path: .runtime, security: .unsecured)
+        ]
+
+        for operation in operations {
+            #expect(throws: TypeScriptBackendGeneratorError.unsupportedPath(operationName: operation.name)) {
                 try TypeScriptBackendApiPackageGenerator(package: testPackage(operation: operation)).generatedFiles()
             }
         }
@@ -647,8 +661,10 @@ struct TypeScriptBackendGeneratorTests {
 
         #expect(models.contains("displayName?: { state: \"unmodified\" } | { state: \"modified\"; value: string | null };"))
         #expect(models.contains("profile?: { state: \"unmodified\" } | { state: \"modified\"; value: Profile | null };"))
-        #expect(models.contains("z.literal(\"unmodified\")"))
-        #expect(models.contains("z.literal(\"modified\")"))
+        #expect(models.contains(#""display_name": z.string().nullable().optional()"#))
+        #expect(models.contains(#""profile": ProfileWireSchema().nullable().optional()"#))
+        #expect(models.contains(#"return { state: "modified", value:"#))
+        #expect(!models.contains("z.literal(\"unmodified\")"))
         #expect(models.contains("display_name"))
         #expect(models.contains("nickname?: string | null;"))
     }

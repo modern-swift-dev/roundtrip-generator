@@ -691,7 +691,14 @@ struct TypeScriptBackendRoutesEmitter {
         }
 
         export interface GeneratedSchemaBindings {
-        \(operations.map { "    \($0.handlerName)?: GeneratedOperationBinding;" }.joined(separator: "\n"))
+        \(operations.map { operation in
+            let responseType: String = if case let .json(dataType?) = operation.operation.response {
+                models.typeDeclaration(for: dataType)
+            } else {
+                "unknown"
+            }
+            return "    \(operation.handlerName)?: GeneratedOperationBinding<unknown, unknown, \(responseType)>;"
+        }.joined(separator: "\n"))
         }
 
         export type GeneratedHandlerInput<Binding, Default> = Binding extends { input?: infer Schema }
