@@ -6,6 +6,7 @@ import OpenApiYamlGenerator
 import SwiftApiGenerator
 import SwiftVaporGenerator
 import TypeScriptApiGenerator
+import TypeScriptBackendGenerator
 
 func main() {
     do {
@@ -13,6 +14,14 @@ func main() {
             try KotlinAndroidApiPackageGenerator(
                 package: .globalAndroid,
                 options: KotlinAndroidGeneratorOptions(generateKoinModule: true, generateMocks: true),
+            ).write()
+            print("Success!")
+            return
+        }
+        if CommandLine.arguments.contains("--backend-only") {
+            try TypeScriptBackendApiPackageGenerator(
+                package: .globalBackend,
+                options: .standaloneProject(packageName: "backend-example"),
             ).write()
             print("Success!")
             return
@@ -27,6 +36,10 @@ func main() {
         try TypeScriptApiPackageGenerator(
             package: .globalTypeScript,
             options: TypeScriptGeneratorOptions(flavor: .tanStackQuery),
+        ).write()
+        try TypeScriptBackendApiPackageGenerator(
+            package: .globalBackend,
+            options: .standaloneProject(packageName: "backend-example"),
         ).write()
         try OpenApiYamlPackageGenerator(package: .globalOpenApi).write()
         try SwiftVaporApiPackageGenerator(

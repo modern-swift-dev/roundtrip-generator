@@ -1,0 +1,21 @@
+{
+  "x-generated": "Generated code. Do not edit.",
+  "name": "backend-example",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "lossless-json": "^4.3.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.5",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

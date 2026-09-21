@@ -619,6 +619,17 @@ ROUNDTRIP_BACKEND_RUNTIME_TEST=1 swift test --filter TypeScriptBackendGeneratedP
 
 The generated-package HTTP test is opt-in because it installs the reference Express/Zod dependency environment; the command above runs the strict TypeScript build and HTTP assertions explicitly.
 
+The repository's executable backend sample is generated with:
+
+```sh
+(cd samples && swift run --package-path cli cli --backend-only)
+npm install --prefix samples/typescript-backend --ignore-scripts --package-lock=false
+npm run --prefix samples/typescript-backend build
+node samples/typescript-backend/test.mjs
+```
+
+The sample's generated files live under `src/generated`; its handwritten `src/server.ts` owns server startup and handlers, while generated `src/app.ts` supplies the minimal Express application and route-registration bootstrap. Regeneration does not replace the server or HTTP test. Use `TypeScriptBackendGeneratorOptions.existingProject(sourceDirectory: "src/generated")` when the host already owns its package and bootstrap; in that mode only generated runtime, models, routes, and index files are written. Standalone mode owns the package manifest, TypeScript configuration, root export, and `createApp` bootstrap in addition to the generated sources. Hosts may pass `GeneratedRouteOptions.jsonBodyParser` (or install their own application middleware before registration) when parser behavior or ordering needs to differ; the default remains the lossless raw-body parser.
+
 Secured, absolute, runtime-URL, non-JSON, and bodyless operations are rejected by this first slice instead of being emitted as incomplete routes. Authentication/context, additional transports, and existing-project ownership controls are added by the later backend slices.
 
 ## TypeScript Client Integration

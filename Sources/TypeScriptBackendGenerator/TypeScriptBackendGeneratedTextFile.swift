@@ -38,7 +38,7 @@ public struct TypeScriptBackendGeneratedTextFile: Sendable, Equatable {
     public func write(to directoryURL: URL, overwritePolicy: TypeScriptBackendGeneratedFileOverwritePolicy) throws {
         let components = try validatedPathComponents()
         let fileURL = components.reduce(directoryURL) { $0.appendingPathComponent($1) }
-        guard Self.isContained(fileURL.deletingLastPathComponent(), in: directoryURL) else {
+        guard Self.isContained(fileURL, in: directoryURL) else {
             throw TypeScriptBackendGeneratedTextFileError.invalidRelativePath(relativePath)
         }
 

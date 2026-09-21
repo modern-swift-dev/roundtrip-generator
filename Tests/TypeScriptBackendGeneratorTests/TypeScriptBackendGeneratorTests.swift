@@ -29,6 +29,7 @@ struct TypeScriptBackendGeneratorTests {
         #expect(paths.contains("package.json"))
         #expect(paths.contains("tsconfig.json"))
         #expect(paths.contains("src/index.ts"))
+        #expect(paths.contains("src/app.ts"))
         #expect(paths.contains("src/generated/models.ts"))
         #expect(paths.contains("src/generated/routes.ts"))
 
@@ -43,6 +44,36 @@ struct TypeScriptBackendGeneratorTests {
         let packageJSON = try #require(files.first { $0.relativePath == "package.json" }?.contents)
         #expect(packageJSON.contains(#""express": "^5.2.1""#))
         #expect(packageJSON.contains(#""zod": "^4.4.3""#))
+        let app = try #require(files.first { $0.relativePath == "src/app.ts" }?.contents)
+        #expect(app.contains("export function createApp"))
+        let routesWithOptions = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+        #expect(routesWithOptions.contains("jsonBodyParser?: RequestHandler"))
+        #expect(routesWithOptions.contains("options?.jsonBodyParser ?? express.raw"))
+        #expect(files == (try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()))
+    }
+
+    @Test func existingProjectGenerationLeavesHostBootstrapAndPackageFilesAlone() throws {
+        let user = ApiTypeSchema.object(typeName: "User", properties: [.string("name")])
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/users"),
+            security: .unsecured,
+            request: user.asRef,
+            response: user.asRef,
+            acceptableStatuses: [200],
+        )
+        let files = try TypeScriptBackendApiPackageGenerator(
+            package: testPackage(operation: operation, references: [user]),
+            options: .existingProject(),
+        ).generatedFiles()
+        let paths = Set(files.map(\.relativePath))
+
+        #expect(paths == [
+            "src/generated/runtime.ts",
+            "src/generated/models.ts",
+            "src/generated/routes.ts",
+            "src/generated/index.ts"
+        ])
     }
 
     @Test func generatedBackendExposesApplicationSchemaBindings() throws {
@@ -482,6 +513,158 @@ struct TypeScriptBackendGeneratorTests {
 
         #expect(throws: TypeScriptBackendGeneratorError.unsupportedSecurity(operationName: "Read")) {
             try TypeScriptBackendApiPackageGenerator(package: testPackage(operation: operation)).generatedFiles()
+        }
+    }
+
+    @Test func backendRegenerationRemovesOnlyStaleManagedSources() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let user = ApiTypeSchema.object(typeName: "User", properties: [.string("name")])
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/users"),
+            security: .unsecured,
+            request: user.asRef,
+            response: user.asRef,
+            acceptableStatuses: [200],
+        )
+        let package = ApiPackage(
+            name: "Example",
+            targetDirUrl: root,
+            modules: [ApiModule(name: "Admin", definitions: [ApiService(name: "Users", operations: [operation], references: [user])])],
+        )
+        let generator = TypeScriptBackendApiPackageGenerator(package: package)
+
+        try generator.write()
+        let generatedRoot = root.appendingPathComponent("src/generated")
+        try TypeScriptBackendGeneratedTextFile(
+            relativePath: "src/generated/stale.ts",
+            contents: TypeScriptBackendGeneratedTextFile.managedHeader,
+        ).write(to: root)
+        try "handwritten".write(
+            to: generatedRoot.appendingPathComponent("handwritten.ts"),
+            atomically: true,
+            encoding: .utf8,
+        )
+
+        try generator.write()
+
+        #expect(!FileManager.default.fileExists(atPath: generatedRoot.appendingPathComponent("stale.ts").path))
+        #expect(try String(contentsOf: generatedRoot.appendingPathComponent("handwritten.ts"), encoding: .utf8) == "handwritten")
+    }
+
+    @Test func backendWriteRefusesUserOwnedGeneratedFiles() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let user = ApiTypeSchema.object(typeName: "User", properties: [.string("name")])
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/users"),
+            security: .unsecured,
+            request: user.asRef,
+            response: user.asRef,
+            acceptableStatuses: [200],
+        )
+        let package = ApiPackage(
+            name: "Example",
+            targetDirUrl: root,
+            modules: [ApiModule(name: "Admin", definitions: [ApiService(name: "Users", operations: [operation], references: [user])])],
+        )
+        let generatedRoot = root.appendingPathComponent("src/generated")
+        try FileManager.default.createDirectory(at: generatedRoot, withIntermediateDirectories: true)
+        try "handwritten".write(
+            to: generatedRoot.appendingPathComponent("models.ts"),
+            atomically: true,
+            encoding: .utf8,
+        )
+
+        #expect(throws: TypeScriptBackendGeneratedTextFileError.refusingToOverwriteUserFile("src/generated/models.ts")) {
+            try TypeScriptBackendApiPackageGenerator(package: package).write()
+        }
+    }
+
+    @Test func backendWriteRejectsGeneratedLeafSymlinkEscape() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        let user = ApiTypeSchema.object(typeName: "User", properties: [.string("name")])
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/users"),
+            security: .unsecured,
+            request: user.asRef,
+            response: user.asRef,
+            acceptableStatuses: [200],
+        )
+        let package = ApiPackage(
+            name: "Example",
+            targetDirUrl: root,
+            modules: [ApiModule(name: "Admin", definitions: [ApiService(name: "Users", operations: [operation], references: [user])])],
+        )
+        let outsideFile = outside.appendingPathComponent("models.ts")
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try "outside".write(to: outsideFile, atomically: true, encoding: .utf8)
+        let generatedRoot = root.appendingPathComponent("src/generated")
+        try FileManager.default.createDirectory(at: generatedRoot, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: generatedRoot.appendingPathComponent("models.ts"),
+            withDestinationURL: outsideFile,
+        )
+
+        #expect(throws: TypeScriptBackendGeneratedTextFileError.invalidRelativePath("src/generated/models.ts")) {
+            try TypeScriptBackendApiPackageGenerator(package: package).write()
+        }
+        #expect(try String(contentsOf: outsideFile, encoding: .utf8) == "outside")
+    }
+
+    @Test func backendNeverOverwritePolicyRefusesExistingManagedFiles() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let user = ApiTypeSchema.object(typeName: "User", properties: [.string("name")])
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/users"),
+            security: .unsecured,
+            request: user.asRef,
+            response: user.asRef,
+            acceptableStatuses: [200],
+        )
+        let package = ApiPackage(
+            name: "Example",
+            targetDirUrl: root,
+            modules: [ApiModule(name: "Admin", definitions: [ApiService(name: "Users", operations: [operation], references: [user])])],
+        )
+        try TypeScriptBackendApiPackageGenerator(package: package).write()
+
+        let neverOverwrite = TypeScriptBackendApiPackageGenerator(
+            package: package,
+            options: TypeScriptBackendGeneratorOptions(overwritePolicy: .neverOverwriteExisting),
+        )
+        #expect(throws: TypeScriptBackendGeneratedTextFileError.refusingToOverwriteUserFile("package.json")) {
+            try neverOverwrite.write()
+        }
+    }
+
+    @Test func backendRejectsDestinationPathCollisions() {
+        let user = ApiTypeSchema.object(typeName: "User", properties: [])
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/users"),
+            security: .unsecured,
+            request: user.asRef,
+            response: user.asRef,
+            acceptableStatuses: [200],
+        )
+        let options = TypeScriptBackendGeneratorOptions(sourceDirectory: "package.json")
+
+        #expect(throws: TypeScriptBackendGeneratorError.invalidSourceDirectory("package.json")) {
+            try TypeScriptBackendApiPackageGenerator(
+                package: testPackage(operation: operation),
+                options: options,
+            ).generatedFiles()
         }
     }
 

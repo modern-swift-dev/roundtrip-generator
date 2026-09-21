@@ -76,6 +76,31 @@ extension ApiPackage {
             .appendingPathComponent("typescript"),
     )
 
+    static let globalBackend: ApiPackage = {
+        let currentDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let message = ApiTypeSchema.object(
+            typeName: "Message",
+            properties: [.string("message_text", propertyName: "messageText")],
+        )
+        let operation = ApiOperation.post(
+            name: "echo",
+            path: .relative("/messages"),
+            security: .unsecured,
+            request: message.asRef,
+            response: message.asRef,
+            acceptableStatuses: [200],
+        )
+        return ApiPackage(
+            name: "BackendExample",
+            targetDirUrl: currentDir.appendingPathComponent("typescript-backend"),
+            modules: [
+                ApiModule(name: "Demo", definitions: [
+                    ApiService(name: "Messages", operations: [operation], references: [message])
+                ])
+            ],
+        )
+    }()
+
     static let globalOpenApi = global.output(
         to: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("openapi"),

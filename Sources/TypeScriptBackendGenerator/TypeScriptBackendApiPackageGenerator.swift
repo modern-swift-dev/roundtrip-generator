@@ -12,8 +12,12 @@ public struct TypeScriptBackendApiPackageGenerator {
 
     public func write() throws {
         let files = try generatedFiles()
+        let targetDirectory = package.targetDirUrl.resolvingSymlinksInPath().standardizedFileURL
         for file in files {
-            try file.write(to: package.targetDirUrl.resolvingSymlinksInPath().standardizedFileURL, overwritePolicy: options.overwritePolicy)
+            try file.write(to: targetDirectory, overwritePolicy: options.overwritePolicy)
+        }
+        if options.overwritePolicy == .replaceManagedFiles {
+            try removeStaleManagedTypeScriptBackendSources(keeping: Set(files.map(\.relativePath)))
         }
     }
 
@@ -27,7 +31,8 @@ public struct TypeScriptBackendApiPackageGenerator {
             files += [
                 .init(relativePath: "package.json", contents: packageJSON()),
                 .init(relativePath: "tsconfig.json", contents: tsconfigJSON()),
-                .init(relativePath: "src/index.ts", contents: rootIndex())
+                .init(relativePath: "src/index.ts", contents: rootIndex()),
+                .init(relativePath: "src/app.ts", contents: appBootstrap())
             ]
         }
         files += [
@@ -216,6 +221,31 @@ public struct TypeScriptBackendApiPackageGenerator {
         // Generated code. Do not edit.
 
         export * from "./generated/index.js";
+        export * from "./app.js";
+        """
+    }
+
+    private func appBootstrap() -> String {
+        """
+        // Generated code. Do not edit.
+
+        import express, { type Express } from "express";
+        import {
+            registerGeneratedRoutes,
+            type GeneratedHandlers,
+            type GeneratedSchemaBindings,
+            type GeneratedRouteOptions
+        } from "./generated/routes.js";
+
+        export function createApp<Bindings extends GeneratedSchemaBindings = {}>(
+            handlers: GeneratedHandlers<Bindings>,
+            bindings?: Bindings,
+            options?: GeneratedRouteOptions,
+        ): Express {
+            const app = express();
+            registerGeneratedRoutes(app, handlers, bindings, options);
+            return app;
+        }
         """
     }
 
@@ -243,6 +273,51 @@ public struct TypeScriptBackendApiPackageGenerator {
             guard paths.insert(path).inserted else {
                 throw TypeScriptBackendGeneratorError.invalidSourceDirectory(options.sourceDirectory)
             }
+        }
+        for path in paths {
+            var components = path.split(separator: "/")
+            while components.count > 1 {
+                components.removeLast()
+                guard !paths.contains(components.joined(separator: "/")) else {
+                    throw TypeScriptBackendGeneratorError.invalidSourceDirectory(options.sourceDirectory)
+                }
+            }
+        }
+    }
+
+    private func removeStaleManagedTypeScriptBackendSources(keeping relativePaths: Set<String>) throws {
+        let sourceURL = options.sourceDirectory
+            .split(separator: "/")
+            .map(String.init)
+            .reduce(package.targetDirUrl) { $0.appendingPathComponent($1, isDirectory: true) }
+        guard FileManager.default.fileExists(atPath: sourceURL.path) else {
+            return
+        }
+
+        let enumerator = FileManager.default.enumerator(
+            at: sourceURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles],
+        )
+        let basePath = package.targetDirUrl.resolvingSymlinksInPath().standardizedFileURL.path
+        while let fileURL = enumerator?.nextObject() as? URL {
+            let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey])
+            guard values.isRegularFile == true else {
+                continue
+            }
+            let filePath = fileURL.resolvingSymlinksInPath().standardizedFileURL.path
+            guard filePath.hasPrefix(basePath + "/") else {
+                continue
+            }
+            let relativePath = String(filePath.dropFirst(basePath.count + 1))
+            guard !relativePaths.contains(relativePath) else {
+                continue
+            }
+            let contents = (try? String(contentsOf: fileURL, encoding: .utf8)) ?? ""
+            guard contents.hasPrefix(TypeScriptBackendGeneratedTextFile.managedHeader) else {
+                continue
+            }
+            try FileManager.default.removeItem(at: fileURL)
         }
     }
 }

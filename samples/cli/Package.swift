@@ -23,7 +23,8 @@ let package = Package(
                 .product(name: "KotlinAndroidApiGenerator", package: "roundtrip-generator"),
                 .product(name: "KotlinSpringBootGenerator", package: "roundtrip-generator"),
                 .product(name: "OpenApiYamlGenerator", package: "roundtrip-generator"),
-                .product(name: "TypeScriptApiGenerator", package: "roundtrip-generator")
+                .product(name: "TypeScriptApiGenerator", package: "roundtrip-generator"),
+                .product(name: "TypeScriptBackendGenerator", package: "roundtrip-generator")
             ],
             path: "src",
         )

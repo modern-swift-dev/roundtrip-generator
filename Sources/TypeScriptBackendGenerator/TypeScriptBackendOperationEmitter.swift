@@ -63,7 +63,7 @@ struct TypeScriptBackendOperationEmitter {
         let method = operation.method.rawValue
         let status = operation.acceptableStatuses.first ?? 200
         return """
-            app.\(method)(\(path.backendStringLiteral), express.raw({ type: "application/json" }), async (request, response, next) => {
+            app.\(method)(\(path.backendStringLiteral), options?.jsonBodyParser ?? express.raw({ type: "application/json" }), async (request, response, next) => {
                 let input: GeneratedHandlerInput<Bindings["\(handlerName)"], \(requestName)>;
                 try {
                     const decodedInput = \(requestDecoder);
@@ -122,7 +122,7 @@ struct TypeScriptBackendRoutesEmitter {
         return """
         // Generated code. Do not edit.
 
-        import express, { type Express } from "express";
+        import express, { type Express, type RequestHandler } from "express";
         import { z } from "zod";
         import {
             base64ToUint8Array,
@@ -153,6 +153,10 @@ struct TypeScriptBackendRoutesEmitter {
             output?: GeneratedSchemaBinding<WireOutput, HandlerOutput>;
         }
 
+        export interface GeneratedRouteOptions {
+            jsonBodyParser?: RequestHandler;
+        }
+
         export interface GeneratedSchemaBindings {
         \(operations.map { "    \($0.handlerName)?: GeneratedOperationBinding;" }.joined(separator: "\n"))
         }
@@ -175,7 +179,7 @@ struct TypeScriptBackendRoutesEmitter {
         \(fields.prepad())
         }
 
-        export function registerGeneratedRoutes<Bindings extends GeneratedSchemaBindings = {}>(app: Express, handlers: GeneratedHandlers<Bindings>, bindings?: Bindings): void {
+        export function registerGeneratedRoutes<Bindings extends GeneratedSchemaBindings = {}>(app: Express, handlers: GeneratedHandlers<Bindings>, bindings?: Bindings, options?: GeneratedRouteOptions): void {
         \(schemaBindingValidation.prepad())
         \(routes.prepad())
         }
