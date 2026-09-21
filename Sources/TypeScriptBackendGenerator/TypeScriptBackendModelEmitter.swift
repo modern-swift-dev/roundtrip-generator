@@ -192,8 +192,9 @@ struct TypeScriptBackendModelEmitter {
                 return "z.string().refine((value) => isValidBase64(value))"
             case let .array(type):
                 return "z.array(\(schemaExpression(for: type)))"
-            case let .keyedByString(type, _):
-                return "z.record(z.string(), \(schemaExpression(for: type)))"
+            case let .keyedByString(type, isOptional):
+                let valueSchema = schemaExpression(for: type) + (isOptional ? ".nullable()" : "")
+                return "z.record(z.string(), \(valueSchema))"
             case let .object(typeName, _, _, _, _, _),
                  let .stringEnum(typeName, _, _, _, _),
                  let .intEnum(typeName, _, _, _),
@@ -236,7 +237,7 @@ struct TypeScriptBackendModelEmitter {
                 expression = "(\(value) as unknown[]).map((item) => \(decodeExpression(for: type, value: "item")))"
             case let .keyedByString(type, isOptional):
                 let item = decodeExpression(for: type, value: "item", optional: isOptional)
-                expression = "Object.fromEntries(Object.entries(\(value) as Record<string, unknown>).map(([key, item]) => [key, \(item)]))"
+                expression = "Object.fromEntries(Object.entries(\(value) as Record<string, unknown>).map(([key, item]) => [key, \(item)])) as \(typeDeclaration(for: dataType))"
             case let .object(typeName, _, _, _, _, _),
                  let .stringEnum(typeName, _, _, _, _),
                  let .intEnum(typeName, _, _, _),
@@ -253,24 +254,27 @@ struct TypeScriptBackendModelEmitter {
     func encodeExpression(for dataType: ApiTypeSchema, value: String) -> String {
         switch dataType {
             case .date:
-                "serializeDate(\(value))"
+                return "serializeDate(\(value))"
             case .url:
-                "serializeURL(\(value))"
+                return "serializeURL(\(value))"
             case .binary:
-                "uint8ArrayToBase64(\(value))"
+                return "uint8ArrayToBase64(\(value))"
             case let .array(type):
-                "(\(value) as unknown[]).map((item) => \(encodeExpression(for: type, value: "item")))"
-            case let .keyedByString(type, _):
-                "Object.fromEntries(Object.entries(\(value)).map(([key, item]) => [key, \(encodeExpression(for: type, value: "item"))]))"
+                return "\(value).map((item) => \(encodeExpression(for: type, value: "item")))"
+            case let .keyedByString(type, isOptional):
+                let itemValue = "item as \(typeDeclaration(for: type))"
+                let encoded = encodeExpression(for: type, value: itemValue)
+                let item = isOptional ? "(item == null ? item : \(encoded))" : encoded
+                return "Object.fromEntries(Object.entries(\(value)).map(([key, item]) => [key, \(item)]))"
             case let .object(typeName, _, _, _, _, _),
                  let .stringEnum(typeName, _, _, _, _),
                  let .intEnum(typeName, _, _, _),
                  let .dynamicObject(typeName, _, _, _, _, _, _, _, _):
-                "encode\(typeName.backendTypeName)(\(value))"
+                return "encode\(typeName.backendTypeName)(\(value))"
             case let .reference(typeName, _, _, _, dataType):
-                dataType.map { encodeExpression(for: $0, value: value) } ?? "encode\(typeName.backendTypeName)(\(value))"
+                return dataType.map { encodeExpression(for: $0, value: value) } ?? "encode\(typeName.backendTypeName)(\(value))"
             default:
-                value
+                return value
         }
     }
 
@@ -296,6 +300,9 @@ struct TypeScriptBackendModelEmitter {
             case .date,
                  .url,
                  .binary:
+                "\(schemaExpression(for: dataType)).parse(\(encodeExpression(for: dataType, value: value)))"
+            case .array,
+                 .keyedByString:
                 "\(schemaExpression(for: dataType)).parse(\(encodeExpression(for: dataType, value: value)))"
             case let .reference(_, _, _, _, resolved):
                 resolved.map { encodeRootExpression(for: $0, value: value) } ?? encodeExpression(for: dataType, value: value)

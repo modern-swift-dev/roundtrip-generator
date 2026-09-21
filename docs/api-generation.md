@@ -580,6 +580,8 @@ Generated routes use `express.raw({ type: "application/json" })` and the generat
 
 Mapped scalar fields use `Date` for ISO-8601 instants, `URL` for valid URL strings, and `Uint8Array` for padded base64 JSON values. UUIDs, `YYYY-MM-DD` calendar dates, and local `HH:mm:ss` values remain strings; invalid scalar formats are rejected at the generated route boundary. Raw binary request/response transport is a separate capability.
 
+Nested DTO references, arrays, and string-keyed dictionaries are converted recursively between Swift property names and their wire names. Shared references are emitted once and reused across the package, module, and service declarations. Optional properties preserve the distinction between a missing value and `null`; nullable dictionary entries preserve their declared keys and values. Object fields that are not declared in the DTO are stripped recursively at the boundary, while dictionary entries remain data owned by the dictionary.
+
 Generate and validate the package with:
 
 ```sh

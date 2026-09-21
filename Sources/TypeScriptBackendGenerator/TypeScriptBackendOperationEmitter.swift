@@ -150,6 +150,9 @@ struct TypeScriptBackendRoutesEmitter {
                     "encode\(typeName.backendTypeName)",
                     "type \(typeName.backendTypeName)"
                 ]
+            case let .array(type),
+                 let .keyedByString(type, _):
+                codecImports(for: type)
             default:
                 nil
         }

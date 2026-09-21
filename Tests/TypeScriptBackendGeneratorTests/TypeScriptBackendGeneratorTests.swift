@@ -161,6 +161,154 @@ struct TypeScriptBackendGeneratorTests {
         #expect(runtime.contains("uint8ArrayToBase64"))
     }
 
+    @Test func generatedBackendSupportsNestedCollectionsAndSharedReferences() throws {
+        let address = ApiTypeSchema.object(
+            typeName: "Address",
+            properties: [
+                .string("street_name", propertyName: "streetName"),
+                .bool("verified")
+            ],
+        )
+        let profile = ApiTypeSchema.object(
+            typeName: "Profile",
+            properties: [
+                .ref("address", of: address),
+                .arrayOfRef("previous_addresses", propertyName: "previousAddresses", of: address),
+                .keyedByString("labels", valueType: .string(), required: false, valueOptional: true),
+                .string("nickname", required: false)
+            ],
+        )
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/profiles"),
+            security: .unsecured,
+            request: profile.asRef,
+            response: profile.asRef,
+            acceptableStatuses: [200],
+        )
+        let package = testPackage(operation: operation, references: [address, profile])
+
+        let files = try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()
+        let models = try #require(files.first { $0.relativePath == "src/generated/models.ts" }?.contents)
+
+        #expect(models.contains("export interface Address"))
+        #expect(models.contains("export interface Profile"))
+        #expect(models.contains("previousAddresses: Address[];"))
+        #expect(models.contains("labels?: Record<string, string | null> | null;"))
+        #expect(models.contains("AddressWireSchema()"))
+        #expect(models.contains("z.array(AddressWireSchema())"))
+        #expect(models.contains("Object.entries(object[\"labels\"]"))
+        #expect(models.components(separatedBy: "export interface Address").count == 2)
+    }
+
+    @Test func generatedBackendImportsCodecsForRootCollections() throws {
+        let address = ApiTypeSchema.object(
+            typeName: "Address",
+            properties: [.string("street_name", propertyName: "streetName")],
+        )
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/addresses"),
+            security: .unsecured,
+            request: .array(address.asRef),
+            response: .keyedByString(address.asRef),
+            acceptableStatuses: [200],
+        )
+        let package = testPackage(operation: operation, references: [address])
+
+        let files = try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()
+        let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+
+        #expect(routes.contains("decodeAddress"))
+        #expect(routes.contains("encodeAddress"))
+        #expect(routes.contains("type Address"))
+    }
+
+    @Test func generatedBackendRejectsNormalizedTypeNameCollisions() {
+        let upper = ApiTypeSchema.object(typeName: "Foo", properties: [])
+        let lower = ApiTypeSchema.object(typeName: "foo", properties: [])
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/foos"),
+            security: .unsecured,
+            request: upper.asRef,
+            response: upper.asRef,
+            acceptableStatuses: [200],
+        )
+
+        #expect(throws: TypeScriptBackendGeneratorError.typeNameCollision(generatedName: "Foo", firstType: "Foo", secondType: "foo")) {
+            try TypeScriptBackendApiPackageGenerator(package: testPackage(operation: operation, references: [upper, lower])).generatedFiles()
+        }
+    }
+
+    @Test func generatedBackendReusesReferencesAcrossOwnershipScopes() throws {
+        let address = ApiTypeSchema.object(typeName: "Address", properties: [.string("street")])
+        let profile = ApiTypeSchema.object(
+            typeName: "Profile",
+            properties: [.ref("address", of: address)],
+        )
+        let user = ApiTypeSchema.object(
+            typeName: "User",
+            properties: [.ref("profile", of: profile)],
+        )
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/users"),
+            security: .unsecured,
+            request: user.asRef,
+            response: user.asRef,
+            acceptableStatuses: [200],
+        )
+        let package = ApiPackage(
+            name: "Example",
+            targetDirUrl: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+            modules: [
+                ApiModule(name: "Admin", definitions: [
+                    ApiService(name: "Users", operations: [operation], references: [user, address])
+                ], references: [profile])
+            ],
+            referencedModules: [],
+            references: [address],
+            commonReferences: [],
+            imports: [],
+        )
+
+        let files = try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()
+        let models = try #require(files.first { $0.relativePath == "src/generated/models.ts" }?.contents)
+
+        #expect(models.components(separatedBy: "export interface Address").count == 2)
+        #expect(models.components(separatedBy: "export interface Profile").count == 2)
+        #expect(models.components(separatedBy: "export interface User").count == 2)
+    }
+
+    @Test func generatedBackendIgnoresUnpublishedExternalFields() throws {
+        let record = ApiTypeSchema.object(
+            typeName: "Record",
+            properties: [
+                .string("name"),
+                ApiModelProperty(
+                    rawName: "private_value",
+                    propertyName: "privateValue",
+                    dataType: .genericReference(typeName: "PrivateValue", genericTypes: []),
+                ).unpublished
+            ],
+        )
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/records"),
+            security: .unsecured,
+            request: record.asRef,
+            response: record.asRef,
+            acceptableStatuses: [200],
+        )
+
+        let files = try TypeScriptBackendApiPackageGenerator(package: testPackage(operation: operation, references: [record])).generatedFiles()
+        let models = try #require(files.first { $0.relativePath == "src/generated/models.ts" }?.contents)
+
+        #expect(models.contains("name: string;"))
+        #expect(!models.contains("privateValue"))
+    }
+
     @Test func securedOperationsAreRejectedUntilAuthenticationIntegrationExists() {
         let operation = ApiOperation.get(
             name: "read",

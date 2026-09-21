@@ -64,6 +64,7 @@ public struct TypeScriptBackendApiPackageGenerator {
                 throw TypeScriptBackendGeneratorError.invalidPackage(reason: "operation \(operation.name) has no acceptable status")
             }
         }
+        try validateGeneratedTypeNames(generatedDataTypes())
         for dataType in packageDataTypes() {
             try validate(dataType: dataType)
             if let external = dataType.backendExternalTypeName {
@@ -102,10 +103,11 @@ public struct TypeScriptBackendApiPackageGenerator {
                 if let resolved {
                     try validate(dataType: resolved)
                 }
-            case .keyedByString,
-                 .stringEnum,
+            case let .array(type),
+                 let .keyedByString(type, _):
+                try validate(dataType: type)
+            case .stringEnum,
                  .intEnum,
-                 .array,
                  .dynamicObject,
                  .genericReference:
                 throw TypeScriptBackendGeneratorError.unsupportedDataType(String(describing: dataType))
@@ -119,6 +121,25 @@ public struct TypeScriptBackendApiPackageGenerator {
             dataType.appendBackendDeclaredTypes(to: &result, seen: &seen)
         }
         return result
+    }
+
+    private func validateGeneratedTypeNames(_ dataTypes: [ApiTypeSchema]) throws {
+        var names: [String: (id: UUID, source: String)] = [:]
+        for dataType in dataTypes {
+            guard let id = dataType.backendDeclaredTypeID,
+                  let source = dataType.backendDeclaredTypeName else {
+                continue
+            }
+            let generatedName = source.backendTypeName
+            if let existing = names[generatedName], existing.id != id {
+                throw TypeScriptBackendGeneratorError.typeNameCollision(
+                    generatedName: generatedName,
+                    firstType: existing.source,
+                    secondType: source,
+                )
+            }
+            names[generatedName] = (id, source)
+        }
     }
 
     private func packageDataTypes() -> [ApiTypeSchema] {

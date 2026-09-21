@@ -12,6 +12,7 @@ public enum TypeScriptBackendGeneratorError: Error, LocalizedError, Equatable {
     case unsupportedResponse(operationName: String)
     case unsupportedDataType(String)
     case unresolvedExternalType(String)
+    case typeNameCollision(generatedName: String, firstType: String, secondType: String)
 
     public var errorDescription: String? {
         switch self {
@@ -33,6 +34,8 @@ public enum TypeScriptBackendGeneratorError: Error, LocalizedError, Equatable {
                 "TypeScript backend does not support \(description) in this slice"
             case let .unresolvedExternalType(typeName):
                 "Missing TypeScript backend schema for external type: \(typeName)"
+            case let .typeNameCollision(generatedName, firstType, secondType):
+                "TypeScript backend type name collision for \(generatedName): \(firstType) and \(secondType)"
         }
     }
 }
@@ -89,6 +92,19 @@ extension ApiTypeSchema {
         }
     }
 
+    var backendDeclaredTypeName: String? {
+        switch self {
+            case let .object(typeName, _, _, _, _, _),
+                 let .stringEnum(typeName, _, _, _, _),
+                 let .intEnum(typeName, _, _, _),
+                 let .dynamicObject(typeName, _, _, _, _, _, _, _, _),
+                 let .reference(typeName, _, _, _, _):
+                typeName
+            default:
+                nil
+        }
+    }
+
     func appendBackendDeclaredTypes(to result: inout [ApiTypeSchema], seen: inout Set<UUID>) {
         if case let .reference(_, _, _, _, dataType) = self {
             dataType?.appendBackendDeclaredTypes(to: &result, seen: &seen)
@@ -131,7 +147,11 @@ extension ApiTypeSchema {
                  let .keyedByString(type, _):
                 type.backendExternalTypeName
             case let .object(_, properties, _, _, _, _):
-                properties.lazy.compactMap(\.dataType.backendExternalTypeName).first
+                properties
+                    .lazy
+                    .filter(\.publishedAsField)
+                    .compactMap(\.dataType.backendExternalTypeName)
+                    .first
             default:
                 nil
         }

@@ -14,12 +14,29 @@ struct TypeScriptBackendGeneratedPackageTests {
             }
         }
 
+        let address = ApiTypeSchema.object(
+            typeName: "Address",
+            properties: [
+                .string("street_name", propertyName: "streetName"),
+                .bool("verified")
+            ],
+        )
+        let profile = ApiTypeSchema.object(
+            typeName: "Profile",
+            properties: [
+                .ref("address", of: address),
+                .arrayOfRef("previous_addresses", propertyName: "previousAddresses", of: address),
+                .keyedByString("labels", valueType: .string(), required: false, valueOptional: true),
+                .string("nickname", required: false)
+            ],
+        )
         let user = ApiTypeSchema.object(
             typeName: "User",
             properties: [
                 .string("display_name", propertyName: "displayName"),
                 .bool("active"),
                 .double("score"),
+                .ref("profile", of: profile),
                 .date("created_at", propertyName: "createdAt"),
                 .url("website"),
                 .binary("payload"),
@@ -44,7 +61,7 @@ struct TypeScriptBackendGeneratedPackageTests {
             targetDirUrl: root,
             modules: [
                 ApiModule(name: "Admin", definitions: [
-                    ApiService(name: "Users", operations: [operation], references: [user])
+                    ApiService(name: "Users", operations: [operation], references: [user, profile, address])
                 ])
             ],
             referencedModules: [],
@@ -100,6 +117,12 @@ struct TypeScriptBackendGeneratedPackageTests {
             adminUsersCreate(input) {
                 handlerCalls += 1;
                 if (input.score === 1.5) {
+                    assert.equal(input.profile.address.streetName, "Main Street");
+                    assert.equal(input.profile.address.verified, true);
+                    assert.equal(input.profile.previousAddresses[0].streetName, "Old Street");
+                    assert.equal(input.profile.previousAddresses[1].verified, true);
+                    assert.deepEqual(input.profile.labels, { primary: "home", secondary: null, extra: "removed" });
+                    assert.equal(input.profile.nickname, null);
                     assert.equal(input.createdAt.toISOString(), "2026-09-21T12:34:56.789Z");
                     assert.equal(input.website.toString(), "https://example.com/path");
                     assert.deepEqual(Array.from(input.payload), [1, 2, 3]);
@@ -117,6 +140,9 @@ struct TypeScriptBackendGeneratedPackageTests {
                     assert.equal(input.id, -9223372036854775808n);
                     assert.equal(input.count, 0n);
                     assert.equal(input.attempts, -2147483648);
+                }
+                if (input.score === 1.7) {
+                    assert.equal(input.profile.nickname, undefined);
                 }
                 if (input.score === 2) {
                     return { ...input, score: "invalid" };
@@ -139,14 +165,13 @@ struct TypeScriptBackendGeneratedPackageTests {
                 return { ...input, privateValue: "removed" };
             }
         });
-
         const server = await new Promise((resolve) => {
             const value = app.listen(0, () => resolve(value));
         });
         const port = server.address().port;
         const url = "http://127.0.0.1:" + port + "/users";
         const body = (score, id, count, attempts) =>
-            `{"display_name":"Ada","active":true,"score":${score},"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":${id},"count":${count},"attempts":${attempts}}`;
+            `{"display_name":"Ada","active":true,"score":${score},"profile":{"address":{"street_name":"Main Street","verified":true,"extra":"removed"},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"},"nickname":null,"extra":"removed"},"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":${id},"count":${count},"attempts":${attempts}}`;
 
         const valid = await fetch(url, {
             method: "POST",
@@ -154,7 +179,15 @@ struct TypeScriptBackendGeneratedPackageTests {
             body: body("1.5", "9223372036854775807", "18446744073709551615", "12").replace("}", ',"undeclared":"removed"}')
         });
         assert.equal(valid.status, 200);
-        assert.equal(await valid.text(), '{"display_name":"Ada","active":true,"score":1.5,"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":9223372036854775807,"count":18446744073709551615,"attempts":12}');
+        assert.equal(await valid.text(), '{"display_name":"Ada","active":true,"score":1.5,"profile":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"},"nickname":null},"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":9223372036854775807,"count":18446744073709551615,"attempts":12}');
+
+        const omittedOptional = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: body("1.7", "1", "1", "12").replace(',"nickname":null', "")
+        });
+        assert.equal(omittedOptional.status, 200);
+        assert.equal(await omittedOptional.text(), '{"display_name":"Ada","active":true,"score":1.7,"profile":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"}},"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":1,"count":1,"attempts":12}');
 
         const signedBoundary = await fetch(url, {
             method: "POST",
@@ -162,7 +195,7 @@ struct TypeScriptBackendGeneratedPackageTests {
             body: body("1.6", "-9223372036854775808", "0", "-2147483648")
         });
         assert.equal(signedBoundary.status, 200);
-        assert.equal(await signedBoundary.text(), '{"display_name":"Ada","active":true,"score":1.6,"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":-9223372036854775808,"count":0,"attempts":-2147483648}');
+        assert.equal(await signedBoundary.text(), '{"display_name":"Ada","active":true,"score":1.6,"profile":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"},"nickname":null},"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":-9223372036854775808,"count":0,"attempts":-2147483648}');
 
         const invalidOutput = await fetch(url, {
             method: "POST",
@@ -212,7 +245,7 @@ struct TypeScriptBackendGeneratedPackageTests {
             body: body("1.5", "9223372036854775807", "18446744073709551615", "12").replace(',"attempts":12}', "}")
         });
         assert.equal(invalid.status, 400);
-        assert.equal(handlerCalls, 8);
+        assert.equal(handlerCalls, 9);
 
         const invalidDate = await fetch(url, {
             method: "POST",
@@ -283,7 +316,7 @@ struct TypeScriptBackendGeneratedPackageTests {
             body: "{"
         });
         assert.equal(malformed.status, 400);
-        assert.equal(handlerCalls, 8);
+        assert.equal(handlerCalls, 9);
 
         await new Promise((resolve) => server.close(resolve));
         """
