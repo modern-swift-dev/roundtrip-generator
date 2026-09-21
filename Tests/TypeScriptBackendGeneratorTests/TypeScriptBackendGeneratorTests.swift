@@ -353,6 +353,49 @@ struct TypeScriptBackendGeneratorTests {
         #expect(!models.contains("supportGarbage"))
     }
 
+    @Test func generatedBackendSupportsDynamicObjectVariants() throws {
+        let message = ApiTypeSchema.object(
+            typeName: "MessagePayload",
+            properties: [.string("message_text", propertyName: "messageText")],
+        )
+        let image = ApiTypeSchema.object(
+            typeName: "ImagePayload",
+            properties: [.string("image_url", propertyName: "imageUrl")],
+        )
+        let envelope = ApiTypeSchema.dynamicObject(
+            typeName: "EventEnvelope",
+            objectTypePropertyName: "kind",
+            objectDataPropertyName: "payload",
+            alternateObjectDataPropertyName: "data",
+            objectTypes: [
+                (objectTypeName: "Message", objectTypeRawName: "message", objectType: message.asRef),
+                (objectTypeName: "Image", objectTypeRawName: "image", objectType: image.asRef)
+            ],
+            supportGarbage: true,
+            extraProperties: [.bool("visible", required: false)],
+        )
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/events"),
+            security: .unsecured,
+            request: envelope.asRef,
+            response: envelope.asRef,
+            acceptableStatuses: [200],
+        )
+        let package = testPackage(operation: operation, references: [envelope, message, image])
+
+        let files = try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()
+        let models = try #require(files.first { $0.relativePath == "src/generated/models.ts" }?.contents)
+
+        #expect(models.contains("objectType: \"message\"; payload: MessagePayload;"))
+        #expect(models.contains("objectType: \"image\"; payload: ImagePayload;"))
+        #expect(models.contains("z.discriminatedUnion(\"kind\""))
+        #expect(models.contains("z.literal(\"message\")"))
+        #expect(models.contains("object[\"payload\"] ?? object[\"data\"]"))
+        #expect(models.contains("\"visible\""))
+        #expect(!models.contains("__garbage__"))
+    }
+
     @Test func securedOperationsAreRejectedUntilAuthenticationIntegrationExists() {
         let operation = ApiOperation.get(
             name: "read",

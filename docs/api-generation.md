@@ -584,6 +584,8 @@ Nested DTO references, arrays, and string-keyed dictionaries are converted recur
 
 Declared string and integer enums are validated at both HTTP boundaries using their wire values. String enum case identifiers may differ from those values; integer enum values remain exact `bigint` values, including wide integers. Swift enum garbage tolerance is a client-side concern and does not enable unknown-value fallbacks in the generated backend. An enum property with a Swift initializer remains required unless the API property itself is optional.
 
+Dynamic-object DTOs use the declared discriminator and variant raw values to select a type-safe payload. The primary payload key is preferred and the configured alternate key is accepted on input; responses always use the primary key. Embedded (`__self__`) payloads are decoded from the envelope and emitted alongside the discriminator. Unknown variants and malformed payloads fail validation, even when the Swift schema enables garbage tolerance; declared extra properties and dictionary contents remain available while undeclared fields are stripped.
+
 Generate and validate the package with:
 
 ```sh

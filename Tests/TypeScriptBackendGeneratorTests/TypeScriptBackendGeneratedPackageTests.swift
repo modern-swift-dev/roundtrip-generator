@@ -43,6 +43,38 @@ struct TypeScriptBackendGeneratedPackageTests {
                 (name: "maximum", rawValue: 9_223_372_036_854_775_807)
             ],
         )
+        let messagePayload = ApiTypeSchema.object(
+            typeName: "MessagePayload",
+            properties: [.string("message_text", propertyName: "messageText")],
+        )
+        let imagePayload = ApiTypeSchema.object(
+            typeName: "ImagePayload",
+            properties: [.string("image_url", propertyName: "imageUrl")],
+        )
+        let eventEnvelope = ApiTypeSchema.dynamicObject(
+            typeName: "EventEnvelope",
+            objectTypePropertyName: "kind",
+            objectDataPropertyName: "payload",
+            alternateObjectDataPropertyName: "data",
+            objectTypes: [
+                (objectTypeName: "Message", objectTypeRawName: "message", objectType: messagePayload.asRef),
+                (objectTypeName: "Image", objectTypeRawName: "image", objectType: imagePayload.asRef)
+            ],
+            supportGarbage: true,
+            extraProperties: [
+                .bool("visible", required: false),
+                .keyedByString("metadata", valueType: .string(), required: false, valueOptional: true)
+            ],
+        )
+        let embeddedEnvelope = ApiTypeSchema.dynamicObject(
+            typeName: "EmbeddedEventEnvelope",
+            objectTypePropertyName: "kind",
+            objectDataPropertyName: "__self__",
+            objectTypes: [
+                (objectTypeName: "Message", objectTypeRawName: "message", objectType: messagePayload.asRef)
+            ],
+            extraProperties: [.bool("visible", required: false)],
+        )
         let user = ApiTypeSchema.object(
             typeName: "User",
             properties: [
@@ -71,12 +103,32 @@ struct TypeScriptBackendGeneratedPackageTests {
             response: user.asRef,
             acceptableStatuses: [200],
         )
+        let eventOperation = ApiOperation.post(
+            name: "createEvent",
+            path: .relative("/events"),
+            security: .unsecured,
+            request: eventEnvelope.asRef,
+            response: eventEnvelope.asRef,
+            acceptableStatuses: [200],
+        )
+        let embeddedOperation = ApiOperation.post(
+            name: "createEmbedded",
+            path: .relative("/embedded-events"),
+            security: .unsecured,
+            request: embeddedEnvelope.asRef,
+            response: embeddedEnvelope.asRef,
+            acceptableStatuses: [200],
+        )
         let package = ApiPackage(
             name: "Example",
             targetDirUrl: root,
             modules: [
                 ApiModule(name: "Admin", definitions: [
-                    ApiService(name: "Users", operations: [operation], references: [user, profile, address, state, magnitude])
+                    ApiService(
+                        name: "Users",
+                        operations: [operation, eventOperation, embeddedOperation],
+                        references: [user, profile, address, state, magnitude, eventEnvelope, embeddedEnvelope, messagePayload, imagePayload],
+                    )
                 ])
             ],
             referencedModules: [],
@@ -186,6 +238,27 @@ struct TypeScriptBackendGeneratedPackageTests {
                     return { ...input, state: "unknown" };
                 }
                 return { ...input, privateValue: "removed" };
+            },
+            adminUsersCreateEvent(input) {
+                if (input.objectType === "message") {
+                    if (input.payload.messageText === "bad") {
+                        return { ...input, payload: { messageText: 42 } };
+                    }
+                    assert.equal(input.payload.messageText, "hello");
+                    assert.equal(input.visible, true);
+                    assert.deepEqual(input.metadata, { source: "test", extra: "kept" });
+                }
+                if (input.objectType === "image") {
+                    assert.equal(input.payload.imageUrl, "https://example.com/image.png");
+                    assert.equal(input.visible, undefined);
+                }
+                return input;
+            },
+            adminUsersCreateEmbedded(input) {
+                assert.equal(input.objectType, "message");
+                assert.equal(input.payload.messageText, "embedded");
+                assert.equal(input.visible, true);
+                return input;
             }
         });
         const server = await new Promise((resolve) => {
@@ -193,6 +266,8 @@ struct TypeScriptBackendGeneratedPackageTests {
         });
         const port = server.address().port;
         const url = "http://127.0.0.1:" + port + "/users";
+        const eventUrl = "http://127.0.0.1:" + port + "/events";
+        const embeddedUrl = "http://127.0.0.1:" + port + "/embedded-events";
         const body = (score, id, count, attempts, magnitude = "9223372036854775807") =>
             `{"display_name":"Ada","active":true,"score":${score},"profile":{"address":{"street_name":"Main Street","verified":true,"extra":"removed"},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"},"nickname":null,"extra":"removed"},"state":"in-progress","magnitude":${magnitude},"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":${id},"count":${count},"attempts":${attempts}}`;
 
@@ -203,6 +278,51 @@ struct TypeScriptBackendGeneratedPackageTests {
         });
         assert.equal(valid.status, 200);
         assert.equal(await valid.text(), '{"display_name":"Ada","active":true,"score":1.5,"profile":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"},"nickname":null},"state":"in-progress","magnitude":9223372036854775807,"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":9223372036854775807,"count":18446744073709551615,"attempts":12}');
+
+        const messageEvent = await fetch(eventUrl, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"kind":"message","payload":{"message_text":"hello","extra":"removed"},"visible":true,"metadata":{"source":"test","extra":"kept"},"undeclared":"removed"}'
+        });
+        assert.equal(messageEvent.status, 200);
+        assert.equal(await messageEvent.text(), '{"kind":"message","payload":{"message_text":"hello"},"visible":true,"metadata":{"source":"test","extra":"kept"}}');
+
+        const alternateImageEvent = await fetch(eventUrl, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"kind":"image","data":{"image_url":"https://example.com/image.png","extra":"removed"}}'
+        });
+        assert.equal(alternateImageEvent.status, 200);
+        assert.equal(await alternateImageEvent.text(), '{"kind":"image","payload":{"image_url":"https://example.com/image.png"}}');
+
+        const invalidDynamicDiscriminator = await fetch(eventUrl, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"kind":"unknown","payload":{}}'
+        });
+        assert.equal(invalidDynamicDiscriminator.status, 400);
+
+        const malformedDynamicPayload = await fetch(eventUrl, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"kind":"message","payload":{}}'
+        });
+        assert.equal(malformedDynamicPayload.status, 400);
+
+        const invalidDynamicOutput = await fetch(eventUrl, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"kind":"message","payload":{"message_text":"bad"},"visible":true}'
+        });
+        assert.equal(invalidDynamicOutput.status, 500);
+
+        const embeddedEvent = await fetch(embeddedUrl, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: '{"kind":"message","message_text":"embedded","visible":true,"extra":"removed"}'
+        });
+        assert.equal(embeddedEvent.status, 200);
+        assert.equal(await embeddedEvent.text(), '{"kind":"message","visible":true,"message_text":"embedded"}');
 
         const omittedOptional = await fetch(url, {
             method: "POST",
@@ -386,7 +506,9 @@ struct TypeScriptBackendGeneratedPackageTests {
         import type { GeneratedHandlers } from "./generated/routes.js";
 
         const validHandlers: GeneratedHandlers = {
-            adminUsersCreate: async (input) => input
+            adminUsersCreate: async (input) => input,
+            adminUsersCreateEvent: async (input) => input,
+            adminUsersCreateEmbedded: async (input) => input,
         };
 
         const incompatibleHandlers: GeneratedHandlers = {
@@ -394,8 +516,14 @@ struct TypeScriptBackendGeneratedPackageTests {
             adminUsersCreate: async () => ({ displayName: "Ada", active: true, score: "not-a-number" })
         };
 
+        const incompatibleDynamicHandlers: GeneratedHandlers = {
+            // @ts-expect-error generated handlers reject incompatible dynamic payload types
+            adminUsersCreateEvent: async () => ({ objectType: "message", payload: { messageText: 42 } })
+        };
+
         void validHandlers;
         void incompatibleHandlers;
+        void incompatibleDynamicHandlers;
         """
     }
 }

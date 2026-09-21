@@ -103,14 +103,20 @@ public struct TypeScriptBackendApiPackageGenerator {
                 if let resolved {
                     try validate(dataType: resolved)
                 }
+            case let .dynamicObject(_, _, _, _, objectTypes, _, _, _, extraProperties):
+                for objectType in objectTypes {
+                    try validate(dataType: objectType.objectType)
+                }
+                for property in extraProperties where property.publishedAsField {
+                    try validate(dataType: property.dataType)
+                }
             case let .array(type),
                  let .keyedByString(type, _):
                 try validate(dataType: type)
             case .stringEnum,
                  .intEnum:
                 break
-            case .dynamicObject,
-                 .genericReference:
+            case .genericReference:
                 throw TypeScriptBackendGeneratorError.unsupportedDataType(String(describing: dataType))
         }
     }

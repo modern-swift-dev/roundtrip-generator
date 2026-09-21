@@ -152,6 +152,13 @@ extension ApiTypeSchema {
                     .filter(\.publishedAsField)
                     .compactMap(\.dataType.backendExternalTypeName)
                     .first
+            case let .dynamicObject(_, _, _, _, objectTypes, _, _, _, extraProperties):
+                objectTypes.lazy.compactMap(\.objectType.backendExternalTypeName).first
+                    ?? extraProperties
+                    .lazy
+                    .filter(\.publishedAsField)
+                    .compactMap(\.dataType.backendExternalTypeName)
+                    .first
             default:
                 nil
         }

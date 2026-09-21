@@ -40,6 +40,15 @@ struct TypeScriptBackendModelEmitter {
                 stringEnumDeclaration(typeName: typeName, values: values.map(\.rawName))
             case let .intEnum(typeName, values, _, _):
                 intEnumDeclaration(typeName: typeName, values: values.map(\.rawValue))
+            case let .dynamicObject(typeName, objectTypePropertyName, objectDataPropertyName, alternateObjectDataPropertyName, objectTypes, _, _, _, extraProperties):
+                dynamicObjectDeclaration(
+                    typeName: typeName,
+                    objectTypePropertyName: objectTypePropertyName,
+                    objectDataPropertyName: objectDataPropertyName,
+                    alternateObjectDataPropertyName: alternateObjectDataPropertyName,
+                    objectTypes: objectTypes,
+                    extraProperties: extraProperties.filter(\.publishedAsField),
+                )
             default:
                 ""
         }
@@ -141,6 +150,113 @@ struct TypeScriptBackendModelEmitter {
             return ["\(value)n"]
         }
         return [String(value), "\(value)n"]
+    }
+
+    private func dynamicObjectDeclaration(
+        typeName: String,
+        objectTypePropertyName: String,
+        objectDataPropertyName: String,
+        alternateObjectDataPropertyName: String,
+        objectTypes: [(objectTypeName: String, objectTypeRawName: String, objectType: ApiTypeSchema)],
+        extraProperties: [ApiModelProperty],
+    ) -> String {
+        let typeCases = objectTypes.map { objectType in
+            let extraFields = extraProperties.map { property in
+                let optional = property.required ? "" : "?"
+                let nullable = property.required ? "" : " | null"
+                return "\(property.propertyName.backendPropertyName)\(optional): \(typeDeclaration(for: property.dataType))\(nullable);"
+            }.joined(separator: "\n")
+            let extra = extraFields.isEmpty ? "" : "\n\(extraFields)"
+            return "{ objectType: \(objectType.objectTypeRawName.backendStringLiteral); payload: \(typeDeclaration(for: objectType.objectType));\(extra) }"
+        }.joined(separator: "\n    | ")
+
+        let extraSchemaFields = extraProperties.map { property in
+            let optional = property.required ? "" : ".nullable().optional()"
+            return "\(property.rawName.backendStringLiteral): \(schemaExpression(for: property.dataType))\(optional),"
+        }
+        let payloadSchemaFields: [String] = objectDataPropertyName == "__self__"
+            ? []
+            : [
+                "\(objectDataPropertyName.backendStringLiteral): z.unknown().optional(),",
+                objectDataPropertyName == alternateObjectDataPropertyName ? "" : "\(alternateObjectDataPropertyName.backendStringLiteral): z.unknown().optional(),"
+            ].filter { !$0.isEmpty }
+        let variantSchemas = objectTypes.map { objectType in
+            let fields = [
+                "\(objectTypePropertyName.backendStringLiteral): z.literal(\(objectType.objectTypeRawName.backendStringLiteral)),"
+            ] + payloadSchemaFields + extraSchemaFields
+            let passthrough = objectDataPropertyName == "__self__" ? ".passthrough()" : ""
+            return "z.object({\n\(fields.joined(separator: "\n").prepad())\n})\(passthrough)"
+        }.joined(separator: ",\n")
+        let wireSchema = objectTypes.count == 1
+            ? variantSchemas
+            : "z.discriminatedUnion(\(objectTypePropertyName.backendStringLiteral), [\n\(variantSchemas.prepad())\n])"
+
+        let decoderCases = objectTypes.map { objectType in
+            let payloadSource = objectDataPropertyName == "__self__"
+                ? "value"
+                : "(object[\(objectDataPropertyName.backendStringLiteral)] ?? object[\(alternateObjectDataPropertyName.backendStringLiteral)])"
+            let payload = decodeExpression(for: objectType.objectType, value: payloadSource)
+            let extras = extraProperties.map { property in
+                let value = "object[\(property.rawName.backendStringLiteral)]"
+                return "\(property.propertyName.backendPropertyName): \(decodeExpression(for: property.dataType, value: value, optional: !property.required)),"
+            }.joined(separator: "\n")
+            return """
+            case \(objectType.objectTypeRawName.backendStringLiteral):
+                return {
+                    objectType: \(objectType.objectTypeRawName.backendStringLiteral),
+                    payload: \(payload),
+            \(extras.prepad(2))
+                };
+            """
+        }.joined(separator: "\n")
+
+        let encoderCases = objectTypes.map { objectType in
+            let extras = extraProperties.map { property in
+                let value = "value.\(property.propertyName.backendPropertyName)"
+                let encoded = encodeExpression(for: property.dataType, value: value)
+                if property.required {
+                    return "output[\(property.rawName.backendStringLiteral)] = \(encoded);"
+                }
+                return "if (\(value) !== undefined) { output[\(property.rawName.backendStringLiteral)] = \(value) === null ? null : \(encoded); }"
+            }.joined(separator: "\n")
+            let payload = "\(schemaExpression(for: objectType.objectType)).parse(\(encodeExpression(for: objectType.objectType, value: "value.payload")))"
+            let payloadLine = objectDataPropertyName == "__self__"
+                ? "Object.assign(output, \(payload));"
+                : "output[\(objectDataPropertyName.backendStringLiteral)] = \(payload);"
+            return """
+            case \(objectType.objectTypeRawName.backendStringLiteral):
+                output[\(objectTypePropertyName.backendStringLiteral)] = value.objectType;
+            \(extras.prepad())
+                \(payloadLine)
+                return \(typeName.backendTypeName)WireSchema().parse(output);
+            """
+        }.joined(separator: "\n")
+
+        return """
+        export type \(typeName.backendTypeName) =
+            | \(typeCases);
+
+        export function \(typeName.backendTypeName)WireSchema() {
+            return \(wireSchema);
+        }
+
+        export function decode\(typeName.backendTypeName)(value: unknown): \(typeName.backendTypeName) {
+            const object = \(typeName.backendTypeName)WireSchema().parse(value) as Record<string, unknown>;
+            const objectType = object[\(objectTypePropertyName.backendStringLiteral)];
+            switch (objectType) {
+        \(decoderCases.prepad())
+                default:
+                    throw new Error(`Unknown \(typeName.backendTypeName) discriminator: ${String(objectType)}`);
+            }
+        }
+
+        export function encode\(typeName.backendTypeName)(value: \(typeName.backendTypeName)): unknown {
+            const output: Record<string, unknown> = {};
+            switch (value.objectType) {
+        \(encoderCases.prepad())
+            }
+        }
+        """
     }
 
     func typeDeclaration(for dataType: ApiTypeSchema) -> String {
