@@ -75,6 +75,15 @@ struct TypeScriptBackendGeneratedPackageTests {
             ],
             extraProperties: [.bool("visible", required: false)],
         )
+        let patchedUser = ApiTypeSchema.object(
+            typeName: "PatchedUser",
+            properties: [
+                ApiModelProperty(rawName: "display_name", propertyName: "displayName", dataType: .string().asPatchable),
+                ApiModelProperty(rawName: "profile_data", propertyName: "profile", dataType: profile.asPatchable),
+                .string("nickname", required: false),
+                .keyedByString("labels", valueType: .string(), required: false, valueOptional: true)
+            ],
+        )
         let user = ApiTypeSchema.object(
             typeName: "User",
             properties: [
@@ -119,6 +128,14 @@ struct TypeScriptBackendGeneratedPackageTests {
             response: embeddedEnvelope.asRef,
             acceptableStatuses: [200],
         )
+        let patchOperation = ApiOperation.patch(
+            name: "update",
+            path: .relative("/users/patch"),
+            security: .unsecured,
+            request: patchedUser.asRef,
+            response: patchedUser.asRef,
+            acceptableStatuses: [200],
+        )
         let package = ApiPackage(
             name: "Example",
             targetDirUrl: root,
@@ -126,8 +143,8 @@ struct TypeScriptBackendGeneratedPackageTests {
                 ApiModule(name: "Admin", definitions: [
                     ApiService(
                         name: "Users",
-                        operations: [operation, eventOperation, embeddedOperation],
-                        references: [user, profile, address, state, magnitude, eventEnvelope, embeddedEnvelope, messagePayload, imagePayload],
+                        operations: [operation, eventOperation, embeddedOperation, patchOperation],
+                        references: [user, profile, address, state, magnitude, eventEnvelope, embeddedEnvelope, patchedUser, messagePayload, imagePayload],
                     )
                 ])
             ],
@@ -259,6 +276,9 @@ struct TypeScriptBackendGeneratedPackageTests {
                 assert.equal(input.payload.messageText, "embedded");
                 assert.equal(input.visible, true);
                 return input;
+            },
+            adminUsersUpdate(input) {
+                return input;
             }
         });
         const server = await new Promise((resolve) => {
@@ -268,6 +288,7 @@ struct TypeScriptBackendGeneratedPackageTests {
         const url = "http://127.0.0.1:" + port + "/users";
         const eventUrl = "http://127.0.0.1:" + port + "/events";
         const embeddedUrl = "http://127.0.0.1:" + port + "/embedded-events";
+        const patchUrl = "http://127.0.0.1:" + port + "/users/patch";
         const body = (score, id, count, attempts, magnitude = "9223372036854775807") =>
             `{"display_name":"Ada","active":true,"score":${score},"profile":{"address":{"street_name":"Main Street","verified":true,"extra":"removed"},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"},"nickname":null,"extra":"removed"},"state":"in-progress","magnitude":${magnitude},"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":${id},"count":${count},"attempts":${attempts}}`;
 
@@ -323,6 +344,29 @@ struct TypeScriptBackendGeneratedPackageTests {
         });
         assert.equal(embeddedEvent.status, 200);
         assert.equal(await embeddedEvent.text(), '{"kind":"message","visible":true,"message_text":"embedded"}');
+
+        const assignedPatch = await fetch(patchUrl, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: '{"profile_data":{"state":"modified","value":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[],"labels":null,"nickname":null}},"labels":{"source":"test","removed":null}}'
+        });
+        assert.equal(assignedPatch.status, 200);
+        assert.equal(await assignedPatch.text(), '{"profile_data":{"state":"modified","value":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[],"labels":null,"nickname":null}},"labels":{"source":"test","removed":null}}');
+
+        const deletedPatch = await fetch(patchUrl, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: '{"display_name":{"state":"modified","value":null},"profile_data":{"state":"unmodified"},"nickname":null,"labels":null}'
+        });
+        assert.equal(deletedPatch.status, 200);
+        assert.equal(await deletedPatch.text(), '{"display_name":{"state":"modified","value":null},"nickname":null,"labels":null}');
+
+        const malformedPatch = await fetch(patchUrl, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: '{"display_name":{"state":"modified","value":42}}'
+        });
+        assert.equal(malformedPatch.status, 400);
 
         const omittedOptional = await fetch(url, {
             method: "POST",
@@ -509,6 +553,7 @@ struct TypeScriptBackendGeneratedPackageTests {
             adminUsersCreate: async (input) => input,
             adminUsersCreateEvent: async (input) => input,
             adminUsersCreateEmbedded: async (input) => input,
+            adminUsersUpdate: async (input) => input,
         };
 
         const incompatibleHandlers: GeneratedHandlers = {

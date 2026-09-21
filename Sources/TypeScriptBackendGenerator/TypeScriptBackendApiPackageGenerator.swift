@@ -116,6 +116,8 @@ public struct TypeScriptBackendApiPackageGenerator {
             case .stringEnum,
                  .intEnum:
                 break
+            case let .genericReference(typeName, types) where typeName == "PatchableValue" && types.count == 1:
+                try validate(dataType: types[0])
             case .genericReference:
                 throw TypeScriptBackendGeneratorError.unsupportedDataType(String(describing: dataType))
         }

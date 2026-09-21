@@ -396,6 +396,41 @@ struct TypeScriptBackendGeneratorTests {
         #expect(!models.contains("__garbage__"))
     }
 
+    @Test func generatedBackendPreservesPatchStates() throws {
+        let profile = ApiTypeSchema.object(
+            typeName: "Profile",
+            properties: [.string("display_name", propertyName: "displayName")],
+        )
+        let patch = ApiTypeSchema.object(
+            typeName: "PatchedUser",
+            properties: [
+                ApiModelProperty(rawName: "display_name", propertyName: "displayName", dataType: .string().asPatchable),
+                ApiModelProperty(rawName: "profile", propertyName: "profile", dataType: profile.asPatchable),
+                .string("nickname", required: false),
+                .keyedByString("labels", valueType: .string(), required: false, valueOptional: true)
+            ],
+        )
+        let operation = ApiOperation.patch(
+            name: "update",
+            path: .relative("/users"),
+            security: .unsecured,
+            request: patch.asRef,
+            response: patch.asRef,
+            acceptableStatuses: [200],
+        )
+        let package = testPackage(operation: operation, references: [patch, profile])
+
+        let files = try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()
+        let models = try #require(files.first { $0.relativePath == "src/generated/models.ts" }?.contents)
+
+        #expect(models.contains("displayName?: { state: \"unmodified\" } | { state: \"modified\"; value: string | null };"))
+        #expect(models.contains("profile?: { state: \"unmodified\" } | { state: \"modified\"; value: Profile | null };"))
+        #expect(models.contains("z.literal(\"unmodified\")"))
+        #expect(models.contains("z.literal(\"modified\")"))
+        #expect(models.contains("display_name"))
+        #expect(models.contains("nickname?: string | null;"))
+    }
+
     @Test func securedOperationsAreRejectedUntilAuthenticationIntegrationExists() {
         let operation = ApiOperation.get(
             name: "read",

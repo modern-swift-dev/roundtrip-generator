@@ -79,6 +79,22 @@ extension String {
 }
 
 extension ApiTypeSchema {
+    var isBackendPatchableValue: Bool {
+        if case let .genericReference(typeName, types) = self {
+            return typeName == "PatchableValue" && types.count == 1
+        }
+        return false
+    }
+
+    var backendPatchableValueType: ApiTypeSchema? {
+        guard case let .genericReference(typeName, types) = self,
+              typeName == "PatchableValue",
+              types.count == 1 else {
+            return nil
+        }
+        return types[0]
+    }
+
     var backendDeclaredTypeID: UUID? {
         switch self {
             case let .object(_, _, _, _, _, uuid),
@@ -141,8 +157,10 @@ extension ApiTypeSchema {
         switch self {
             case let .reference(typeName, _, _, _, dataType):
                 dataType == nil ? typeName : dataType?.backendExternalTypeName
-            case let .genericReference(typeName, _):
-                typeName
+            case let .genericReference(typeName, types):
+                typeName == "PatchableValue"
+                    ? types.lazy.compactMap(\.backendExternalTypeName).first
+                    : typeName
             case let .array(type),
                  let .keyedByString(type, _):
                 type.backendExternalTypeName

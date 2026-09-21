@@ -57,22 +57,33 @@ struct TypeScriptBackendModelEmitter {
     private func objectDeclaration(typeName: String, properties: [ApiModelProperty]) -> String {
         let publishedProperties = properties.filter(\.publishedAsField)
         let interfaceFields = publishedProperties.map { property in
-            let optional = property.required ? "" : "?"
-            let nullable = property.required ? "" : " | null"
+            let patchable = property.dataType.isBackendPatchableValue
+            let optional = property.required && !patchable ? "" : "?"
+            let nullable = property.required || patchable ? "" : " | null"
             return "\(property.propertyName.backendPropertyName)\(optional): \(typeDeclaration(for: property.dataType))\(nullable);"
         }.joined(separator: "\n")
         let schemaFields = publishedProperties.map { property in
-            let optional = property.required ? "" : ".nullable().optional()"
+            let optional = property.dataType.isBackendPatchableValue ? ".optional()" : property.required ? "" : ".nullable().optional()"
             return "\(property.rawName.backendStringLiteral): \(schemaExpression(for: property.dataType))\(optional),"
         }.joined(separator: "\n")
         let decodedFields = publishedProperties.map { property in
             let value = "object[\(property.rawName.backendStringLiteral)]"
-            return "\(property.propertyName.backendPropertyName): \(decodeExpression(for: property.dataType, value: value, optional: !property.required)),"
+            let decoded = decodeExpression(for: property.dataType, value: value)
+            let expression: String = if property.dataType.isBackendPatchableValue {
+                "(\(value) === undefined ? undefined : \(decoded))"
+            } else {
+                decodeExpression(for: property.dataType, value: value, optional: !property.required)
+            }
+            return "\(property.propertyName.backendPropertyName): \(expression),"
         }.joined(separator: "\n")
         let encodedFields = publishedProperties.map { property in
             let value = "value.\(property.propertyName.backendPropertyName)"
             let encoded = encodeExpression(for: property.dataType, value: value)
-            let optional = property.required ? encoded : "(\(value) == null ? \(value) : \(encoded))"
+            let optional: String = if property.dataType.isBackendPatchableValue {
+                "(\(value) === undefined || String(\(value).state) === \"unmodified\" ? undefined : \(encoded))"
+            } else {
+                property.required ? encoded : "(\(value) == null ? \(value) : \(encoded))"
+            }
             return "\(property.rawName.backendStringLiteral): \(optional),"
         }.joined(separator: "\n")
         return """
@@ -298,8 +309,12 @@ struct TypeScriptBackendModelEmitter {
                 typeName.backendTypeName
             case let .reference(typeName, _, _, _, dataType):
                 dataType.map(typeDeclaration(for:)) ?? typeName.backendTypeName
-            case let .genericReference(typeName, _):
-                typeName.backendTypeName
+            case let .genericReference(typeName, types):
+                if typeName == "PatchableValue", let valueType = types.first {
+                    "{ state: \"unmodified\" } | { state: \"modified\"; value: \(typeDeclaration(for: valueType)) | null }"
+                } else {
+                    typeName.backendTypeName
+                }
         }
     }
 
@@ -349,7 +364,10 @@ struct TypeScriptBackendModelEmitter {
                 return "\(typeName.backendTypeName)WireSchema()"
             case let .reference(typeName, _, _, _, dataType):
                 return dataType.map(schemaExpression(for:)) ?? "\(typeName.backendTypeName)WireSchema()"
-            case let .genericReference(typeName, _):
+            case let .genericReference(typeName, types):
+                if typeName == "PatchableValue", let valueType = types.first {
+                    return "z.discriminatedUnion(\"state\", [z.object({ state: z.literal(\"unmodified\") }), z.object({ state: z.literal(\"modified\"), value: \(schemaExpression(for: valueType)).nullable() })])"
+                }
                 return "\(typeName.backendTypeName)WireSchema()"
         }
     }
@@ -392,8 +410,14 @@ struct TypeScriptBackendModelEmitter {
                 expression = "decode\(typeName.backendTypeName)(\(value))"
             case let .reference(typeName, _, _, _, dataType):
                 expression = dataType.map { decodeExpression(for: $0, value: value) } ?? "decode\(typeName.backendTypeName)(\(value))"
-            case .genericReference:
-                expression = "\(value) as \(typeDeclaration(for: dataType))"
+            case let .genericReference(typeName, types):
+                if typeName == "PatchableValue", let valueType = types.first {
+                    let patch = "(\(schemaExpression(for: dataType)).parse(\(value)) as { state: \"unmodified\" } | { state: \"modified\"; value: unknown })"
+                    let decodedValue = "patch.value == null ? null : \(decodeExpression(for: valueType, value: "patch.value"))"
+                    expression = "(() => { const patch = \(patch); if (patch.state === \"unmodified\") return { state: \"unmodified\" }; return { state: \"modified\", value: \(decodedValue) }; })()"
+                } else {
+                    expression = "\(value) as \(typeDeclaration(for: dataType))"
+                }
         }
         return optional ? "(\(value) == null ? \(value) : \(expression))" : expression
     }
@@ -420,6 +444,12 @@ struct TypeScriptBackendModelEmitter {
                 return "encode\(typeName.backendTypeName)(\(value))"
             case let .reference(typeName, _, _, _, dataType):
                 return dataType.map { encodeExpression(for: $0, value: value) } ?? "encode\(typeName.backendTypeName)(\(value))"
+            case let .genericReference(typeName, types) where typeName == "PatchableValue":
+                guard let valueType = types.first else {
+                    return value
+                }
+                let encodedValue = encodeExpression(for: valueType, value: "\(value).value")
+                return "(\(value).state === \"unmodified\" ? \(value) : { state: \"modified\", value: \(value).value == null ? null : \(encodedValue) })"
             default:
                 return value
         }
@@ -453,6 +483,8 @@ struct TypeScriptBackendModelEmitter {
                 "\(schemaExpression(for: dataType)).parse(\(encodeExpression(for: dataType, value: value)))"
             case let .reference(_, _, _, _, resolved):
                 resolved.map { encodeRootExpression(for: $0, value: value) } ?? encodeExpression(for: dataType, value: value)
+            case let .genericReference(typeName, _) where typeName == "PatchableValue":
+                "\(schemaExpression(for: dataType)).parse(\(encodeExpression(for: dataType, value: value)))"
             default:
                 encodeExpression(for: dataType, value: value)
         }

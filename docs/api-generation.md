@@ -586,6 +586,8 @@ Declared string and integer enums are validated at both HTTP boundaries using th
 
 Dynamic-object DTOs use the declared discriminator and variant raw values to select a type-safe payload. The primary payload key is preferred and the configured alternate key is accepted on input; responses always use the primary key. Embedded (`__self__`) payloads are decoded from the envelope and emitted alongside the discriminator. Unknown variants and malformed payloads fail validation, even when the Swift schema enables garbage tolerance; declared extra properties and dictionary contents remain available while undeclared fields are stripped.
 
+Patch DTO properties use the built-in three-state shape: an omitted property is unchanged, `{ state: "unmodified" }` is also unchanged when supplied explicitly, and `{ state: "modified", value: ... }` assigns a value or deletes it when `value` is `null`. Generated patch routes omit unchanged properties in responses, preserve nested wire-name mappings, and keep ordinary optional fields and nullable dictionary entries separate from patch state.
+
 Generate and validate the package with:
 
 ```sh
