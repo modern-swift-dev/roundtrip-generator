@@ -12,6 +12,7 @@ Read the [published documentation](https://modern-swift-dev.github.io/docs/round
 - `KotlinAndroidApiGenerator`: native Android clients using Retrofit and OkHttp.
 - `KotlinSpringBootGenerator`: Spring Boot server projects.
 - `TypeScriptApiGenerator`: TypeScript clients with optional TanStack Query helpers.
+- `TypeScriptBackendGenerator`: Express 5 and Zod 4 TypeScript backend routes.
 - `OpenApiYamlGenerator`: OpenAPI YAML.
 - `GeneratorModels`: shared API description types.
 - `GeneratorBuilder`: shared text-generation primitives.

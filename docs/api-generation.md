@@ -551,6 +551,40 @@ Generate and build the checked-in Android sample using the repository's Gradle 9
 
 For a separate generated project, use Gradle 9.5.1 or provision its wrapper. Publish the release artifact to Maven or include the generated module in your Android build. Managed-file protection and `KotlinAndroidGradleOptions(overwritePolicy: .neverOverwriteExisting)` follow the existing Kotlin generator's conventions.
 
+## TypeScript Backend Integration
+
+Use `TypeScriptBackendApiPackageGenerator` for an Express 5 and Zod 4 backend package. The first backend slice supports unsecured relative JSON operations. Generated routes parse and validate the wire body, convert it to a mapped DTO for an application-owned handler, validate and serialize the handler result, and strip undeclared fields at both boundaries.
+
+```swift
+import TypeScriptBackendGenerator
+
+try TypeScriptBackendApiPackageGenerator(
+    package: backendPackage,
+    options: .standaloneProject(packageName: "example-backend")
+).write()
+```
+
+The generated package exposes `registerGeneratedRoutes(app:handlers:)` from `src/generated/routes.ts`. Register it in an existing Express application after choosing the application's error boundary:
+
+```ts
+import express from "express";
+import { registerGeneratedRoutes } from "./generated/routes.js";
+
+const app = express();
+registerGeneratedRoutes(app, {
+    adminUsersCreate: async (input) => input
+});
+```
+
+Generate and validate the package with:
+
+```sh
+npm install --prefix generated/backend
+npm run --prefix generated/backend build
+```
+
+Secured, absolute, runtime-URL, non-JSON, and bodyless operations are rejected by this first slice instead of being emitted as incomplete routes. Authentication/context, additional transports, and existing-project ownership controls are added by the later backend slices.
+
 ## TypeScript Client Integration
 
 Use `TypeScriptApiPackageGenerator` for a generated TypeScript package.

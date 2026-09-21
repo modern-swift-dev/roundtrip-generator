@@ -27,6 +27,7 @@ let package = Package(
         .library(name: "KotlinAndroidApiGenerator", targets: ["KotlinAndroidApiGenerator"]),
         .library(name: "KotlinSpringBootGenerator", targets: ["KotlinSpringBootGenerator"]),
         .library(name: "TypeScriptApiGenerator", targets: ["TypeScriptApiGenerator"]),
+        .library(name: "TypeScriptBackendGenerator", targets: ["TypeScriptBackendGenerator"]),
         .library(name: "OpenApiYamlGenerator", targets: ["OpenApiYamlGenerator"]),
         .library(name: "GeneratorModels", targets: ["GeneratorModels"]),
         .library(name: "GeneratorBuilder", targets: ["GeneratorBuilder"])
@@ -110,6 +111,15 @@ let package = Package(
             swiftSettings: swiftSettings,
         ),
         .target(
+            name: "TypeScriptBackendGenerator",
+            dependencies: [
+                "GeneratorBuilder",
+                "GeneratorModels"
+            ],
+            path: "Sources/TypeScriptBackendGenerator",
+            swiftSettings: swiftSettings,
+        ),
+        .target(
             name: "OpenApiYamlGenerator",
             dependencies: [
                 "GeneratorBuilder",
@@ -169,6 +179,16 @@ let package = Package(
                 "TypeScriptApiGenerator"
             ],
             path: "Tests/TypeScriptApiGeneratorTests",
+            swiftSettings: testSwiftSettings,
+        ),
+        .testTarget(
+            name: "TypeScriptBackendGeneratorTests",
+            dependencies: [
+                "GeneratorBuilder",
+                "GeneratorModels",
+                "TypeScriptBackendGenerator"
+            ],
+            path: "Tests/TypeScriptBackendGeneratorTests",
             swiftSettings: testSwiftSettings,
         ),
         .testTarget(
