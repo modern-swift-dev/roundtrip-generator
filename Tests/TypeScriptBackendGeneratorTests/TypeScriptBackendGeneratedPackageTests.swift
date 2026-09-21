@@ -30,6 +30,19 @@ struct TypeScriptBackendGeneratedPackageTests {
                 .string("nickname", required: false)
             ],
         )
+        let state = ApiTypeSchema.stringEnum(
+            typeName: "State",
+            values: [(name: "inProgress", rawName: "in-progress")],
+            initialValue: "inProgress",
+            supportGarbage: true,
+        )
+        let magnitude = ApiTypeSchema.intEnum(
+            typeName: "Magnitude",
+            values: [
+                (name: "small", rawValue: 1),
+                (name: "maximum", rawValue: 9_223_372_036_854_775_807)
+            ],
+        )
         let user = ApiTypeSchema.object(
             typeName: "User",
             properties: [
@@ -37,6 +50,8 @@ struct TypeScriptBackendGeneratedPackageTests {
                 .bool("active"),
                 .double("score"),
                 .ref("profile", of: profile),
+                .ref("state", of: state),
+                .ref("magnitude", of: magnitude),
                 .date("created_at", propertyName: "createdAt"),
                 .url("website"),
                 .binary("payload"),
@@ -61,7 +76,7 @@ struct TypeScriptBackendGeneratedPackageTests {
             targetDirUrl: root,
             modules: [
                 ApiModule(name: "Admin", definitions: [
-                    ApiService(name: "Users", operations: [operation], references: [user, profile, address])
+                    ApiService(name: "Users", operations: [operation], references: [user, profile, address, state, magnitude])
                 ])
             ],
             referencedModules: [],
@@ -123,6 +138,8 @@ struct TypeScriptBackendGeneratedPackageTests {
                     assert.equal(input.profile.previousAddresses[1].verified, true);
                     assert.deepEqual(input.profile.labels, { primary: "home", secondary: null, extra: "removed" });
                     assert.equal(input.profile.nickname, null);
+                    assert.equal(input.state, "in-progress");
+                    assert.equal(input.magnitude, 9223372036854775807n);
                     assert.equal(input.createdAt.toISOString(), "2026-09-21T12:34:56.789Z");
                     assert.equal(input.website.toString(), "https://example.com/path");
                     assert.deepEqual(Array.from(input.payload), [1, 2, 3]);
@@ -140,6 +157,9 @@ struct TypeScriptBackendGeneratedPackageTests {
                     assert.equal(input.id, -9223372036854775808n);
                     assert.equal(input.count, 0n);
                     assert.equal(input.attempts, -2147483648);
+                }
+                if (input.score === 1.8) {
+                    assert.ok(input.magnitude === 1 || input.magnitude === 1n);
                 }
                 if (input.score === 1.7) {
                     assert.equal(input.profile.nickname, undefined);
@@ -162,6 +182,9 @@ struct TypeScriptBackendGeneratedPackageTests {
                 if (input.score === 7) {
                     return { ...input, payload: [] };
                 }
+                if (input.score === 8) {
+                    return { ...input, state: "unknown" };
+                }
                 return { ...input, privateValue: "removed" };
             }
         });
@@ -170,8 +193,8 @@ struct TypeScriptBackendGeneratedPackageTests {
         });
         const port = server.address().port;
         const url = "http://127.0.0.1:" + port + "/users";
-        const body = (score, id, count, attempts) =>
-            `{"display_name":"Ada","active":true,"score":${score},"profile":{"address":{"street_name":"Main Street","verified":true,"extra":"removed"},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"},"nickname":null,"extra":"removed"},"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":${id},"count":${count},"attempts":${attempts}}`;
+        const body = (score, id, count, attempts, magnitude = "9223372036854775807") =>
+            `{"display_name":"Ada","active":true,"score":${score},"profile":{"address":{"street_name":"Main Street","verified":true,"extra":"removed"},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"},"nickname":null,"extra":"removed"},"state":"in-progress","magnitude":${magnitude},"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":${id},"count":${count},"attempts":${attempts}}`;
 
         const valid = await fetch(url, {
             method: "POST",
@@ -179,7 +202,7 @@ struct TypeScriptBackendGeneratedPackageTests {
             body: body("1.5", "9223372036854775807", "18446744073709551615", "12").replace("}", ',"undeclared":"removed"}')
         });
         assert.equal(valid.status, 200);
-        assert.equal(await valid.text(), '{"display_name":"Ada","active":true,"score":1.5,"profile":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"},"nickname":null},"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":9223372036854775807,"count":18446744073709551615,"attempts":12}');
+        assert.equal(await valid.text(), '{"display_name":"Ada","active":true,"score":1.5,"profile":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"},"nickname":null},"state":"in-progress","magnitude":9223372036854775807,"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":9223372036854775807,"count":18446744073709551615,"attempts":12}');
 
         const omittedOptional = await fetch(url, {
             method: "POST",
@@ -187,7 +210,15 @@ struct TypeScriptBackendGeneratedPackageTests {
             body: body("1.7", "1", "1", "12").replace(',"nickname":null', "")
         });
         assert.equal(omittedOptional.status, 200);
-        assert.equal(await omittedOptional.text(), '{"display_name":"Ada","active":true,"score":1.7,"profile":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"}},"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":1,"count":1,"attempts":12}');
+        assert.equal(await omittedOptional.text(), '{"display_name":"Ada","active":true,"score":1.7,"profile":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"}},"state":"in-progress","magnitude":9223372036854775807,"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":1,"count":1,"attempts":12}');
+
+        const safeIntegerEnum = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: body("1.8", "1", "1", "12", 1)
+        });
+        assert.equal(safeIntegerEnum.status, 200);
+        assert.equal(await safeIntegerEnum.text(), '{"display_name":"Ada","active":true,"score":1.8,"profile":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"},"nickname":null},"state":"in-progress","magnitude":1,"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":1,"count":1,"attempts":12}');
 
         const signedBoundary = await fetch(url, {
             method: "POST",
@@ -195,7 +226,7 @@ struct TypeScriptBackendGeneratedPackageTests {
             body: body("1.6", "-9223372036854775808", "0", "-2147483648")
         });
         assert.equal(signedBoundary.status, 200);
-        assert.equal(await signedBoundary.text(), '{"display_name":"Ada","active":true,"score":1.6,"profile":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"},"nickname":null},"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":-9223372036854775808,"count":0,"attempts":-2147483648}');
+        assert.equal(await signedBoundary.text(), '{"display_name":"Ada","active":true,"score":1.6,"profile":{"address":{"street_name":"Main Street","verified":true},"previous_addresses":[{"street_name":"Old Street","verified":false},{"street_name":"New Street","verified":true}],"labels":{"primary":"home","secondary":null,"extra":"removed"},"nickname":null},"state":"in-progress","magnitude":9223372036854775807,"created_at":"2026-09-21T12:34:56.789Z","website":"https://example.com/path","payload":"AQID","identifier":"550e8400-e29b-41d4-a716-446655440000","business_date":"2026-09-21","business_time":"12:34:56.789","id":-9223372036854775808,"count":0,"attempts":-2147483648}');
 
         const invalidOutput = await fetch(url, {
             method: "POST",
@@ -239,13 +270,20 @@ struct TypeScriptBackendGeneratedPackageTests {
         });
         assert.equal(invalidBinaryOutput.status, 500);
 
+        const invalidEnumOutput = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: body("8", "1", "1", "12")
+        });
+        assert.equal(invalidEnumOutput.status, 500);
+
         const invalid = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: body("1.5", "9223372036854775807", "18446744073709551615", "12").replace(',"attempts":12}', "}")
         });
         assert.equal(invalid.status, 400);
-        assert.equal(handlerCalls, 9);
+        assert.equal(handlerCalls, 11);
 
         const invalidDate = await fetch(url, {
             method: "POST",
@@ -282,6 +320,27 @@ struct TypeScriptBackendGeneratedPackageTests {
         });
         assert.equal(invalidBase64.status, 400);
 
+        const invalidEnumInput = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: body("1.5", "1", "1", "12").replace("in-progress", "unknown")
+        });
+        assert.equal(invalidEnumInput.status, 400);
+
+        const missingRequiredEnum = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: body("1.5", "1", "1", "12").replace(',"state":"in-progress"', "")
+        });
+        assert.equal(missingRequiredEnum.status, 400);
+
+        const wrongEnumType = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: body("1.5", "1", "1", "12").replace('"magnitude":9223372036854775807', '"magnitude":"9223372036854775807"')
+        });
+        assert.equal(wrongEnumType.status, 400);
+
         const negativeUnsigned = await fetch(url, {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -316,7 +375,7 @@ struct TypeScriptBackendGeneratedPackageTests {
             body: "{"
         });
         assert.equal(malformed.status, 400);
-        assert.equal(handlerCalls, 9);
+        assert.equal(handlerCalls, 11);
 
         await new Promise((resolve) => server.close(resolve));
         """

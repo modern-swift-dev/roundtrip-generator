@@ -107,8 +107,9 @@ public struct TypeScriptBackendApiPackageGenerator {
                  let .keyedByString(type, _):
                 try validate(dataType: type)
             case .stringEnum,
-                 .intEnum,
-                 .dynamicObject,
+                 .intEnum:
+                break
+            case .dynamicObject,
                  .genericReference:
                 throw TypeScriptBackendGeneratorError.unsupportedDataType(String(describing: dataType))
         }

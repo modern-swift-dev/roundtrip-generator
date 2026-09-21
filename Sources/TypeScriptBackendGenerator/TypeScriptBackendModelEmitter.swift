@@ -37,9 +37,9 @@ struct TypeScriptBackendModelEmitter {
             case let .object(typeName, properties, _, _, _, _):
                 objectDeclaration(typeName: typeName, properties: properties)
             case let .stringEnum(typeName, values, _, _, _):
-                enumDeclaration(typeName: typeName, values: values.map(\.rawName))
+                stringEnumDeclaration(typeName: typeName, values: values.map(\.rawName))
             case let .intEnum(typeName, values, _, _):
-                enumDeclaration(typeName: typeName, values: values.map { String($0.rawValue) })
+                intEnumDeclaration(typeName: typeName, values: values.map(\.rawValue))
             default:
                 ""
         }
@@ -92,7 +92,7 @@ struct TypeScriptBackendModelEmitter {
         """
     }
 
-    private func enumDeclaration(typeName: String, values: [String]) -> String {
+    private func stringEnumDeclaration(typeName: String, values: [String]) -> String {
         let literalValues = values.map(\.backendStringLiteral).joined(separator: " | ")
         let schemaValues = values.map(\.backendStringLiteral).joined(separator: ", ")
         return """
@@ -110,6 +110,37 @@ struct TypeScriptBackendModelEmitter {
             return \(typeName.backendTypeName)WireSchema().parse(value);
         }
         """
+    }
+
+    private func intEnumDeclaration(typeName: String, values: [Int]) -> String {
+        let literals = values.flatMap { integerEnumLiterals($0) }
+        let literalValues = literals.joined(separator: " | ")
+        let schemaValues = literals.map { "z.literal(\($0))" }.joined(separator: ", ")
+        let schema = literals.count == 1 ? schemaValues : "z.union([\(schemaValues)])"
+        return """
+        export type \(typeName.backendTypeName) = \(literalValues);
+
+        export function \(typeName.backendTypeName)WireSchema() {
+            return \(schema);
+        }
+
+        export function decode\(typeName.backendTypeName)(value: unknown): \(typeName.backendTypeName) {
+            return \(typeName.backendTypeName)WireSchema().parse(value);
+        }
+
+        export function encode\(typeName.backendTypeName)(value: \(typeName.backendTypeName)): unknown {
+            return \(typeName.backendTypeName)WireSchema().parse(value);
+        }
+        """
+    }
+
+    private func integerEnumLiterals(_ value: Int) -> [String] {
+        let maximumSafeInteger = 9_007_199_254_740_991
+        let safeIntegerRange = (-maximumSafeInteger ... maximumSafeInteger)
+        guard safeIntegerRange.contains(value) else {
+            return ["\(value)n"]
+        }
+        return [String(value), "\(value)n"]
     }
 
     func typeDeclaration(for dataType: ApiTypeSchema) -> String {

@@ -582,6 +582,8 @@ Mapped scalar fields use `Date` for ISO-8601 instants, `URL` for valid URL strin
 
 Nested DTO references, arrays, and string-keyed dictionaries are converted recursively between Swift property names and their wire names. Shared references are emitted once and reused across the package, module, and service declarations. Optional properties preserve the distinction between a missing value and `null`; nullable dictionary entries preserve their declared keys and values. Object fields that are not declared in the DTO are stripped recursively at the boundary, while dictionary entries remain data owned by the dictionary.
 
+Declared string and integer enums are validated at both HTTP boundaries using their wire values. String enum case identifiers may differ from those values; integer enum values remain exact `bigint` values, including wide integers. Swift enum garbage tolerance is a client-side concern and does not enable unknown-value fallbacks in the generated backend. An enum property with a Swift initializer remains required unless the API property itself is optional.
+
 Generate and validate the package with:
 
 ```sh

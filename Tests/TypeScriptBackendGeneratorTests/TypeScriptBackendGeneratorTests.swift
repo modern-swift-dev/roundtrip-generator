@@ -309,6 +309,50 @@ struct TypeScriptBackendGeneratorTests {
         #expect(!models.contains("privateValue"))
     }
 
+    @Test func generatedBackendPreservesEnumWireValuesAndPrecision() throws {
+        let state = ApiTypeSchema.stringEnum(
+            typeName: "State",
+            values: [
+                (name: "inProgress", rawName: "in-progress")
+            ],
+            initialValue: "inProgress",
+            supportGarbage: true,
+        )
+        let magnitude = ApiTypeSchema.intEnum(
+            typeName: "Magnitude",
+            values: [
+                (name: "small", rawValue: 1),
+                (name: "maximum", rawValue: 9_223_372_036_854_775_807)
+            ],
+        )
+        let record = ApiTypeSchema.object(
+            typeName: "Record",
+            properties: [
+                .ref("state", of: state),
+                .ref("magnitude", of: magnitude)
+            ],
+        )
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/records"),
+            security: .unsecured,
+            request: record.asRef,
+            response: record.asRef,
+            acceptableStatuses: [200],
+        )
+        let package = testPackage(operation: operation, references: [record, state, magnitude])
+
+        let files = try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()
+        let models = try #require(files.first { $0.relativePath == "src/generated/models.ts" }?.contents)
+
+        #expect(models.contains(#"export type State = "in-progress";"#))
+        #expect(models.contains(#"z.enum(["in-progress"])"#))
+        #expect(models.contains("export type Magnitude = 1 | 1n | 9223372036854775807n;"))
+        #expect(models.contains("z.literal(1)"))
+        #expect(models.contains("z.literal(9223372036854775807n)"))
+        #expect(!models.contains("supportGarbage"))
+    }
+
     @Test func securedOperationsAreRejectedUntilAuthenticationIntegrationExists() {
         let operation = ApiOperation.get(
             name: "read",
