@@ -117,7 +117,7 @@ struct TypeScriptBackendGeneratorTests {
         #expect(routes.contains("options?.rawBodyParser ?? express.raw({ type: \"application/json\" })"))
         #expect(routes.contains("options?.rawBodyParser ?? express.raw({ type: \"*/*\" })"))
         #expect(routes.contains("output.value instanceof Uint8Array"))
-        #expect(routes.contains("app.get(\"/health\", async"))
+        #expect(routes.contains("app.get(\"/health\", ...(options?.integration?.unsecured?.middleware ?? [])"))
         #expect(routes.contains("response.status(output.status).end()"))
     }
 
@@ -608,17 +608,43 @@ struct TypeScriptBackendGeneratorTests {
         #expect(models.contains("nickname?: string | null;"))
     }
 
-    @Test func securedOperationsAreRejectedUntilAuthenticationIntegrationExists() {
-        let operation = ApiOperation.get(
-            name: "read",
-            path: .relative("/users"),
-            security: .secured,
-            response: .object(typeName: "User", properties: []).asRef,
+    @Test func generatedBackendExposesSecurityPoliciesTypedContextAndApplicationErrors() throws {
+        let user = ApiTypeSchema.object(typeName: "User", properties: [.string("name")])
+        let operations = [
+            ApiOperation.get(name: "secured", path: .relative("/secured"), security: .secured, response: user.asRef),
+            ApiOperation.get(name: "optional", path: .relative("/optional"), security: .optional, response: user.asRef),
+            ApiOperation.get(name: "public", path: .relative("/public"), security: .unsecured, response: user.asRef)
+        ]
+        let package = ApiPackage(
+            name: "Example",
+            targetDirUrl: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+            modules: [
+                ApiModule(name: "Admin", definitions: [
+                    ApiService(name: "Users", operations: operations, references: [user])
+                ])
+            ],
         )
 
-        #expect(throws: TypeScriptBackendGeneratorError.unsupportedSecurity(operationName: "Read")) {
-            try TypeScriptBackendApiPackageGenerator(package: testPackage(operation: operation)).generatedFiles()
-        }
+        let files = try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()
+        let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+        let runtime = try #require(files.first { $0.relativePath == "src/generated/runtime.ts" }?.contents)
+
+        #expect(routes.contains("export interface GeneratedRequestPolicy<Context = unknown>"))
+        #expect(routes.contains("export interface GeneratedRequestIntegration"))
+        #expect(routes.contains("secured?: GeneratedRequestPolicy"))
+        #expect(routes.contains("optional?: GeneratedRequestPolicy"))
+        #expect(routes.contains("unsecured?: GeneratedRequestPolicy"))
+        #expect(routes.contains("GeneratedHandlers<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}>"))
+        #expect(routes.contains("GeneratedHandlerContext<Integration, \"secured\">"))
+        #expect(routes.contains("GeneratedHandlerContext<Integration, \"optional\">"))
+        #expect(routes.contains("GeneratedHandlerContext<Integration, \"unsecured\">"))
+        #expect(routes.contains("Missing secured request policy"))
+        #expect(routes.contains("Missing optional request policy"))
+        #expect(routes.contains("generatedRequestContextMiddleware"))
+        #expect(routes.contains("new GeneratedValidationError(\"Admin.Users.Secured\", \"input\""))
+        #expect(routes.contains("new GeneratedValidationError(\"Admin.Users.Secured\", \"output\""))
+        #expect(runtime.contains("export class GeneratedValidationError extends Error"))
+        #expect(runtime.contains("readonly phase: \"input\" | \"output\""))
     }
 
     @Test func backendRegenerationRemovesOnlyStaleManagedSources() throws {

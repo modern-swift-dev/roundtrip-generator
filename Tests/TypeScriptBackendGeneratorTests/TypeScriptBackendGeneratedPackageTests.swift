@@ -260,6 +260,66 @@ struct TypeScriptBackendGeneratedPackageTests {
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
+    func generatedPackageIntegratesAuthenticationContextAndApplicationErrors() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let payload = ApiTypeSchema.object(typeName: "Payload", properties: [.string("value")])
+        let result = ApiTypeSchema.object(
+            typeName: "PolicyResult",
+            properties: [
+                .string("policy"),
+                .string("identity", required: false),
+                .string("value")
+            ],
+        )
+        let secured = ApiOperation.get(
+            name: "secured",
+            path: .relative("/secured/{id}"),
+            security: .secured,
+            parameters: [.path("id", .string())],
+            response: result.asRef,
+        )
+        let optional = ApiOperation.get(
+            name: "optional",
+            path: .relative("/optional"),
+            security: .optional,
+            response: result.asRef,
+        )
+        let publicOperation = ApiOperation.post(
+            name: "public",
+            path: .relative("/public"),
+            security: .unsecured,
+            request: payload.asRef,
+            response: result.asRef,
+            acceptableStatuses: [200],
+        )
+        let package = ApiPackage(
+            name: "PolicyExample",
+            targetDirUrl: root,
+            modules: [
+                ApiModule(name: "Auth", definitions: [
+                    ApiService(name: "Policies", operations: [secured, optional, publicOperation], references: [payload, result])
+                ])
+            ],
+        )
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for file in try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles() {
+            try file.write(to: root)
+        }
+        try securityTypeFixture().write(
+            to: root.appendingPathComponent("src/security-fixture.ts"),
+            atomically: true,
+            encoding: .utf8,
+        )
+        try securityRuntimeTest().write(to: root.appendingPathComponent("test.mjs"), atomically: true, encoding: .utf8)
+
+        try run(["install", "--ignore-scripts", "--package-lock=false"], in: root)
+        try run(["run", "build"], in: root)
+        try run(["exec", "--", "node", "test.mjs"], in: root)
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
     func generatedPackageBindsRouteParametersOverHTTP() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -372,6 +432,7 @@ struct TypeScriptBackendGeneratedPackageTests {
         import assert from "node:assert/strict";
         import express from "express";
         import { registerGeneratedRoutes } from "./dist/generated/routes.js";
+        import { GeneratedValidationError } from "./dist/generated/runtime.js";
         import { generatedResponse } from "./dist/generated/runtime.js";
 
         const app = express();
@@ -387,6 +448,10 @@ struct TypeScriptBackendGeneratedPackageTests {
             })
         };
         registerGeneratedRoutes(app, handlers);
+        app.use((error, _request, response, _next) => {
+            const status = error instanceof GeneratedValidationError && error.phase === "input" ? 400 : 500;
+            response.status(status).json({ error: "Request failed" });
+        });
         const server = app.listen(0);
         await new Promise((resolve) => server.once("listening", resolve));
         try {
@@ -422,11 +487,255 @@ struct TypeScriptBackendGeneratedPackageTests {
         """
     }
 
+    private func securityTypeFixture() -> String {
+        """
+        import type {
+            GeneratedHandlers,
+            GeneratedRequestPolicy
+        } from "./generated/routes.js";
+
+        type Integration = {
+            secured: GeneratedRequestPolicy<{ identity: string; requestId: string }>;
+            optional: GeneratedRequestPolicy<{ identity: string | null; requestId: string }>;
+            unsecured: GeneratedRequestPolicy<{ requestId: string; parserWasPending: boolean }>;
+        };
+
+        const handlers: GeneratedHandlers<{}, Integration> = {
+            authPoliciesSecured: async (input, context) => ({ policy: "secured", identity: context.identity, value: input.id }),
+            authPoliciesOptional: async (_input, context) => ({ policy: "optional", identity: context.identity ?? undefined, value: context.requestId }),
+            authPoliciesPublic: async (input, context) => ({ policy: "public", value: context.parserWasPending ? input.value : "late-parser" })
+        };
+
+        const securedHandler: GeneratedHandlers<{}, Integration>["authPoliciesSecured"] = async (_input, context) => {
+            // @ts-expect-error secured identity remains a string
+            const identity: number = context.identity;
+            return { policy: "secured", identity: context.identity, value: identity.toString() };
+        };
+
+        const optionalHandler: GeneratedHandlers<{}, Integration>["authPoliciesOptional"] = async (_input, context) => {
+            // @ts-expect-error optional identity can be null
+            const identity: string = context.identity;
+            return { policy: "optional", identity, value: context.requestId };
+        };
+
+        const publicHandlerWithoutIntegration: GeneratedHandlers<{}, {}>["authPoliciesPublic"] = async (input, context) => {
+            // @ts-expect-error omitted unsecured policy produces undefined context
+            const requestId = context.requestId;
+            return { policy: "public", value: requestId ?? input.value };
+        };
+
+        void handlers;
+        void securedHandler;
+        void optionalHandler;
+        void publicHandlerWithoutIntegration;
+        """
+    }
+
+    private func securityRuntimeTest() -> String {
+        """
+        import assert from "node:assert/strict";
+        import express from "express";
+        import { z } from "zod";
+        import { registerGeneratedRoutes } from "./dist/generated/routes.js";
+        import { GeneratedValidationError, generatedResponse } from "./dist/generated/runtime.js";
+
+        class HandlerFailure extends Error {}
+        class BindingFailure extends Error {}
+        const order = [];
+        let handlerCalls = 0;
+
+        const integration = {
+            secured: {
+                middleware: [
+                    (request, response, next) => {
+                        order.push("secured:middleware");
+                        if (request.get("Authorization") === "Bearer accepted") {
+                            response.locals.identity = "user-1";
+                            next();
+                            return;
+                        }
+                        response.status(401).json({ code: "AUTH_REQUIRED" });
+                    }
+                ],
+                context: (_request, response) => {
+                    order.push("secured:context");
+                    return { identity: response.locals.identity, requestId: "secured-request" };
+                }
+            },
+            optional: {
+                middleware: [
+                    (request, response, next) => {
+                        order.push("optional:middleware");
+                        response.locals.identity = request.get("Authorization") === "Bearer accepted" ? "user-1" : null;
+                        next();
+                    }
+                ],
+                context: (_request, response) => {
+                    order.push("optional:context");
+                    return { identity: response.locals.identity, requestId: "optional-request" };
+                }
+            },
+            unsecured: {
+                middleware: [(request, _response, next) => { order.push("public:middleware"); next(); }],
+                context: (request) => {
+                    order.push("public:context");
+                    return { requestId: "public-request", parserWasPending: request.body === undefined };
+                }
+            }
+        };
+
+        const handlers = {
+            authPoliciesSecured: async (input, context) => {
+                handlerCalls += 1;
+                order.push("secured:handler");
+                if (input.id === "throw") {
+                    throw new HandlerFailure("handler failed");
+                }
+                if (input.id === "invalid-output") {
+                    return generatedResponse(42, { headers: { "x-success": "must-not-escape" } });
+                }
+                return { policy: "secured", identity: context.identity, value: input.id };
+            },
+            authPoliciesOptional: async (_input, context) => {
+                handlerCalls += 1;
+                order.push("optional:handler");
+                return { policy: "optional", identity: context.identity ?? undefined, value: context.requestId };
+            },
+            authPoliciesPublic: async (input, context) => {
+                handlerCalls += 1;
+                order.push("public:handler");
+                return { policy: "public", value: context.parserWasPending ? input.value : "late-parser" };
+            }
+        };
+        const bindings = {
+            authPoliciesSecured: {
+                output: z.object({
+                    policy: z.string(),
+                    identity: z.string().optional(),
+                    value: z.string()
+                }).transform((value) => {
+                    if (value.value === "binding-output-error") {
+                        throw new BindingFailure("output binding failed");
+                    }
+                    return value;
+                })
+            },
+            authPoliciesPublic: {
+                input: z.object({ value: z.string().min(1) }).transform((value) => {
+                    if (value.value === "binding-input-error") {
+                        throw new BindingFailure("input binding failed");
+                    }
+                    return value;
+                })
+            }
+        };
+
+        assert.throws(
+            () => registerGeneratedRoutes(express(), handlers),
+            /Missing secured request policy/
+        );
+
+        const app = express();
+        registerGeneratedRoutes(app, handlers, bindings, { integration });
+        app.use((error, _request, response, _next) => {
+            if (error instanceof GeneratedValidationError) {
+                response.status(error.phase === "input" ? 400 : 500).json({ code: `GENERATED_${error.phase.toUpperCase()}`, operation: error.operationId });
+                return;
+            }
+            if (error instanceof HandlerFailure) {
+                response.status(409).json({ code: "HANDLER_FAILURE" });
+                return;
+            }
+            if (error instanceof BindingFailure) {
+                response.status(422).json({ code: "BINDING_FAILURE" });
+                return;
+            }
+            response.status(500).json({ code: "UNEXPECTED" });
+        });
+
+        const server = app.listen(0);
+        await new Promise((resolve) => server.once("listening", resolve));
+        try {
+            const address = server.address();
+            const base = `http://127.0.0.1:${address.port}`;
+
+            const rejected = await fetch(`${base}/secured/rejected`);
+            assert.equal(rejected.status, 401);
+            assert.deepEqual(await rejected.json(), { code: "AUTH_REQUIRED" });
+            assert.equal(handlerCalls, 0);
+
+            order.length = 0;
+            const accepted = await fetch(`${base}/secured/accepted`, { headers: { authorization: "Bearer accepted" } });
+            assert.equal(accepted.status, 200);
+            assert.deepEqual(await accepted.json(), { policy: "secured", identity: "user-1", value: "accepted" });
+            assert.deepEqual(order, ["secured:middleware", "secured:context", "secured:handler"]);
+
+            const anonymous = await fetch(`${base}/optional`);
+            assert.equal(anonymous.status, 200);
+            assert.deepEqual(await anonymous.json(), { policy: "optional", value: "optional-request" });
+
+            const identified = await fetch(`${base}/optional`, { headers: { authorization: "Bearer accepted" } });
+            assert.equal(identified.status, 200);
+            assert.deepEqual(await identified.json(), { policy: "optional", identity: "user-1", value: "optional-request" });
+
+            order.length = 0;
+            const publicResponse = await fetch(`${base}/public`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: '{"value":"parsed"}'
+            });
+            assert.equal(publicResponse.status, 200);
+            assert.deepEqual(await publicResponse.json(), { policy: "public", value: "parsed" });
+            assert.deepEqual(order, ["public:middleware", "public:context", "public:handler"]);
+
+            const handlerFailure = await fetch(`${base}/secured/throw`, { headers: { authorization: "Bearer accepted" } });
+            assert.equal(handlerFailure.status, 409);
+            assert.deepEqual(await handlerFailure.json(), { code: "HANDLER_FAILURE" });
+
+            const malformed = await fetch(`${base}/public`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: "{"
+            });
+            assert.equal(malformed.status, 400);
+            assert.deepEqual(await malformed.json(), { code: "GENERATED_INPUT", operation: "Auth.Policies.Public" });
+
+            const invalidBindingInput = await fetch(`${base}/public`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: '{"value":""}'
+            });
+            assert.equal(invalidBindingInput.status, 400);
+            assert.deepEqual(await invalidBindingInput.json(), { code: "GENERATED_INPUT", operation: "Auth.Policies.Public" });
+
+            const bindingInputFailure = await fetch(`${base}/public`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: '{"value":"binding-input-error"}'
+            });
+            assert.equal(bindingInputFailure.status, 422);
+            assert.deepEqual(await bindingInputFailure.json(), { code: "BINDING_FAILURE" });
+
+            const bindingOutputFailure = await fetch(`${base}/secured/binding-output-error`, { headers: { authorization: "Bearer accepted" } });
+            assert.equal(bindingOutputFailure.status, 422);
+            assert.deepEqual(await bindingOutputFailure.json(), { code: "BINDING_FAILURE" });
+
+            const invalidOutput = await fetch(`${base}/secured/invalid-output`, { headers: { authorization: "Bearer accepted" } });
+            assert.equal(invalidOutput.status, 500);
+            assert.equal(invalidOutput.headers.get("x-success"), null);
+            assert.deepEqual(await invalidOutput.json(), { code: "GENERATED_OUTPUT", operation: "Auth.Policies.Secured" });
+        } finally {
+            await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        }
+        """
+    }
+
     private func parameterRuntimeTest() -> String {
         """
         import assert from "node:assert/strict";
         import express from "express";
         import { registerGeneratedRoutes } from "./dist/generated/routes.js";
+        import { GeneratedValidationError } from "./dist/generated/runtime.js";
 
         const app = express();
         let handlerCalls = 0;
@@ -455,6 +764,10 @@ struct TypeScriptBackendGeneratedPackageTests {
             adminUsersInspectFile: async (input) => input.fileName
         };
         registerGeneratedRoutes(app, handlers);
+        app.use((error, _request, response, _next) => {
+            const status = error instanceof GeneratedValidationError && error.phase === "input" ? 400 : 500;
+            response.status(status).json({ error: "Request failed" });
+        });
         const server = app.listen(0);
         await new Promise((resolve) => server.once("listening", resolve));
         try {
@@ -550,6 +863,7 @@ struct TypeScriptBackendGeneratedPackageTests {
         import express from "express";
         import { z } from "zod";
         import { registerGeneratedRoutes } from "./dist/generated/routes.js";
+        import { GeneratedValidationError } from "./dist/generated/runtime.js";
 
         const app = express();
         let handlerCalls = 0;
@@ -692,6 +1006,10 @@ struct TypeScriptBackendGeneratedPackageTests {
             /Missing schema binding for adminUsersExternal input/
         );
         registerGeneratedRoutes(app, handlers, bindings);
+        app.use((error, _request, response, _next) => {
+            const status = error instanceof GeneratedValidationError && error.phase === "input" ? 400 : 500;
+            response.status(status).json({ error: "Request failed" });
+        });
         const server = await new Promise((resolve) => {
             const value = app.listen(0, () => resolve(value));
         });

@@ -3,6 +3,12 @@ import GeneratorBuilder
 import GeneratorModels
 
 struct TypeScriptBackendOperationEmitter {
+    enum RequestPolicy: String {
+        case secured
+        case optional
+        case unsecured
+    }
+
     let module: ApiModule
     let definition: ApiService
     let operation: ApiOperation
@@ -16,18 +22,30 @@ struct TypeScriptBackendOperationEmitter {
         operationTypeName.backendPropertyName
     }
 
+    var operationIdentifier: String {
+        "\(module.name.backendTypeName).\(definition.name.backendTypeName).\(operation.name.backendTypeName)"
+    }
+
+    var requestPolicy: RequestPolicy {
+        switch operation.security {
+            case .secured: .secured
+            case .optional: .optional
+            case .unsecured: .unsecured
+        }
+    }
+
     func handlerDeclaration() -> String {
         let requestType = handlerRequestType()
         let responseType = handlerResponseType()
         let inputDeclaration = parameterInputDeclaration()
         return """
         \(inputDeclaration)
-        export type \(operationTypeName)Handler<Bindings extends GeneratedSchemaBindings = {}> = (input: GeneratedHandlerInput<Bindings[\"\(handlerName)\"], \(requestType)>) => GeneratedHandlerOutput<Bindings[\"\(handlerName)\"], \(responseType)>;
+        export type \(operationTypeName)Handler<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}> = (input: GeneratedHandlerInput<Bindings[\"\(handlerName)\"], \(requestType)>, context: GeneratedHandlerContext<Integration, "\(requestPolicy.rawValue)">) => GeneratedHandlerOutput<Bindings[\"\(handlerName)\"], \(responseType)>;
         """
     }
 
     func handlerField() -> String {
-        "\(handlerName): \(operationTypeName)Handler<Bindings>;"
+        "\(handlerName): \(operationTypeName)Handler<Bindings, Integration>;"
     }
 
     var requiresInputSchemaBinding: Bool {
@@ -53,24 +71,41 @@ struct TypeScriptBackendOperationEmitter {
         let path = relativePath()
         let method = operation.method.rawValue
         let status = operation.acceptableStatuses.first ?? 200
-        let routeParser = requestParser().map { ", \($0)" } ?? ""
+        let routeMiddleware = [
+            "...(options?.integration?.\(requestPolicy.rawValue)?.middleware ?? [])",
+            "generatedRequestContextMiddleware(options?.integration?.\(requestPolicy.rawValue))",
+            requestParser()
+        ]
+        .compactMap(\.self)
+        .map { ", \($0)" }
+        .joined()
         return """
-            app.\(method)(\(path.backendStringLiteral)\(routeParser), async (request, response, next) => {
-                let input: GeneratedHandlerInput<Bindings["\(handlerName)"], \(handlerRequestType())>;
+            app.\(method)(\(path.backendStringLiteral)\(routeMiddleware), async (request, response, next) => {
+                let decodedInput: \(handlerRequestType());
                 try {
             \(requestDecodeLines().prepad(4))
-                } catch {
-                    response.status(400).json({ error: "Invalid request" });
+                } catch (error) {
+                    next(new GeneratedValidationError(\(operationIdentifier.backendStringLiteral), "input", error));
+                    return;
+                }
+
+                let input: GeneratedHandlerInput<Bindings["\(handlerName)"], \(handlerRequestType())>;
+                try {
+                    input = (bindings?.\(handlerName)?.input ? bindings.\(handlerName).input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["\(handlerName)"], \(handlerRequestType())>;
+                } catch (error) {
+                    next(error instanceof z.ZodError ? new GeneratedValidationError(\(operationIdentifier.backendStringLiteral), "input", error) : error);
                     return;
                 }
 
                 try {
-                    const output = normalizeGeneratedResponse(await handlers.\(handlerName)(input), \(status));
-                    validateGeneratedResponseStatus(output.status, [\(operation.acceptableStatuses.map(String.init).joined(separator: ", "))]);
-                    for (const [name, value] of Object.entries(output.headers)) {
-                        response.setHeader(name, value);
+                    const handlerOutput = await handlers.\(handlerName)(input, generatedRequestContext<GeneratedHandlerContext<Integration, "\(requestPolicy.rawValue)">>(request));
+                    try {
+                        const output = normalizeGeneratedResponse(handlerOutput, \(status));
+                        validateGeneratedResponseStatus(output.status, [\(operation.acceptableStatuses.map(String.init).joined(separator: ", "))]);
+            \(responseHandling().prepad(8))
+                    } catch (error) {
+                        next(new GeneratedValidationError(\(operationIdentifier.backendStringLiteral), "output", error));
                     }
-            \(responseHandling().prepad(4))
                 } catch (error) {
                     next(error);
                 }
@@ -127,16 +162,14 @@ struct TypeScriptBackendOperationEmitter {
         }
         switch operation.request {
             case .none:
-                return "input = undefined as GeneratedHandlerInput<Bindings[\"\(handlerName)\"], void>;"
+                return "decodedInput = undefined;"
             case let .json(dataType):
                 guard let dataType else {
-                    return "input = undefined as GeneratedHandlerInput<Bindings[\"\(handlerName)\"], void>;"
+                    return "decodedInput = undefined;"
                 }
-                let requestType = models.typeDeclaration(for: dataType)
                 let requestDecoder = models.decodeExpression(for: dataType, value: "parseJsonBody(request.body)")
                 return """
-                const decodedInput = \(requestDecoder);
-                input = (bindings?.\(handlerName)?.input ? bindings.\(handlerName).input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["\(handlerName)"], \(requestType)>;
+                decodedInput = \(requestDecoder);
                 """
             case .binary,
                  .file:
@@ -144,10 +177,10 @@ struct TypeScriptBackendOperationEmitter {
                 if (!(request.body instanceof Uint8Array)) {
                     throw new Error("Invalid raw request body");
                 }
-                input = request.body as GeneratedHandlerInput<Bindings["\(handlerName)"], Uint8Array>;
+                decodedInput = request.body;
                 """
             case .multiPart:
-                return "input = undefined as GeneratedHandlerInput<Bindings[\"\(handlerName)\"], void>;"
+                return "decodedInput = undefined;"
         }
     }
 
@@ -158,6 +191,7 @@ struct TypeScriptBackendOperationEmitter {
                 if (output.value !== undefined) {
                     throw new Error("Bodyless response cannot include a response value");
                 }
+                \(responseHeadersSource())
                 response.status(output.status).end();
                 """
             case let .binary(mimeType):
@@ -165,6 +199,7 @@ struct TypeScriptBackendOperationEmitter {
                 if (!(output.value instanceof Uint8Array)) {
                     throw new Error("Invalid raw response body");
                 }
+                \(responseHeadersSource())
                 if (!generatedResponseHasBody(output.status)) {
                     response.status(output.status).end();
                     return;
@@ -178,15 +213,31 @@ struct TypeScriptBackendOperationEmitter {
                 let responseType = models.typeDeclaration(for: dataType)
                 let responseEncoder = models.encodeRootExpression(for: dataType, value: "publicOutput")
                 return """
-                const publicOutput = (bindings?.\(handlerName)?.output ? bindings.\(handlerName).output.parse(output.value) : output.value) as GeneratedWireOutput<Bindings["\(handlerName)"], \(responseType)>;
+                let publicOutput: GeneratedWireOutput<Bindings["\(handlerName)"], \(responseType)>;
+                try {
+                    publicOutput = (bindings?.\(handlerName)?.output ? bindings.\(handlerName).output.parse(output.value) : output.value) as GeneratedWireOutput<Bindings["\(handlerName)"], \(responseType)>;
+                } catch (error) {
+                    next(error instanceof z.ZodError ? new GeneratedValidationError(\(operationIdentifier.backendStringLiteral), "output", error) : error);
+                    return;
+                }
                 const body = \(responseEncoder);
+                const responseBody = stringifyJsonResponse(body);
+                \(responseHeadersSource())
                 if (!generatedResponseHasBody(output.status)) {
                     response.status(output.status).end();
                     return;
                 }
-                response.status(output.status).type("application/json").send(stringifyJsonResponse(body));
+                response.status(output.status).type("application/json").send(responseBody);
                 """
         }
+    }
+
+    private func responseHeadersSource() -> String {
+        """
+        for (const [name, value] of Object.entries(output.headers)) {
+            response.setHeader(name, value);
+        }
+        """
     }
 
     private func parameterInputDeclaration() -> String {
@@ -232,12 +283,11 @@ struct TypeScriptBackendOperationEmitter {
         if hasRequestBody {
             fields.append("body,")
         }
-        let decodedInput = "const decodedInput = {\n\(fields.joined(separator: "\n").prepad())\n};"
+        let decodedInput = "decodedInput = {\n\(fields.joined(separator: "\n").prepad())\n} as \(handlerRequestType());"
         return """
         \(parameterLines)
         \(bodyLines)
         \(decodedInput)
-        input = (bindings?.\(handlerName)?.input ? bindings.\(handlerName).input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings[\"\(handlerName)\"], \(handlerRequestType())>;
         """
     }
 
@@ -427,6 +477,7 @@ struct TypeScriptBackendRoutesEmitter {
         let schemaBindingValidation = operations.map { $0.schemaBindingValidation() }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
+        let requestPolicyValidation = requestPolicyValidation(operations)
         let importedDataTypes = operations.flatMap { operation in
             [operation.operation.request.dataType, operation.operation.response.dataType]
                 .compactMap(\.self)
@@ -439,7 +490,7 @@ struct TypeScriptBackendRoutesEmitter {
         return """
         // Generated code. Do not edit.
 
-        import express, { type Express, type RequestHandler } from "express";
+        import express, { type Express, type Request, type RequestHandler, type Response } from "express";
         import { z } from "zod";
         import {
             base64ToUint8Array,
@@ -472,7 +523,7 @@ struct TypeScriptBackendRoutesEmitter {
             validateGeneratedResponseStatus,
             uint8ArrayToBase64
         } from "./runtime.js";
-        import { type GeneratedResponse } from "./runtime.js";
+        import { GeneratedValidationError, type GeneratedResponse } from "./runtime.js";
         import {
             \(imports)
         } from "./models.js";
@@ -484,9 +535,49 @@ struct TypeScriptBackendRoutesEmitter {
             output?: GeneratedSchemaBinding<WireOutput, HandlerOutput>;
         }
 
-        export interface GeneratedRouteOptions {
+        export type GeneratedMaybePromise<Value> = Value | Promise<Value>;
+
+        export interface GeneratedRequestPolicy<Context = unknown> {
+            readonly middleware?: readonly RequestHandler[];
+            context(request: Request, response: Response): GeneratedMaybePromise<Context>;
+        }
+
+        export interface GeneratedRequestIntegration {
+            readonly secured?: GeneratedRequestPolicy;
+            readonly optional?: GeneratedRequestPolicy;
+            readonly unsecured?: GeneratedRequestPolicy;
+        }
+
+        export type GeneratedHandlerContext<Integration, Policy extends keyof GeneratedRequestIntegration> =
+            Policy extends keyof Integration
+                ? Integration[Policy] extends GeneratedRequestPolicy<infer Context> ? Context : undefined
+                : undefined;
+
+        export interface GeneratedRouteOptions<Integration extends GeneratedRequestIntegration = {}> {
             jsonBodyParser?: RequestHandler;
             rawBodyParser?: RequestHandler;
+            integration?: Integration;
+        }
+
+        const generatedRequestContexts = new WeakMap<Request, unknown>();
+
+        function generatedRequestContextMiddleware(policy: GeneratedRequestPolicy | undefined): RequestHandler {
+            return async (request, response, next) => {
+                try {
+                    const context = policy ? await policy.context(request, response) : undefined;
+                    if (response.headersSent || response.writableEnded) {
+                        return;
+                    }
+                    generatedRequestContexts.set(request, context);
+                    next();
+                } catch (error) {
+                    next(error);
+                }
+            };
+        }
+
+        function generatedRequestContext<Context>(request: Request): Context {
+            return generatedRequestContexts.get(request) as Context;
         }
 
         export interface GeneratedSchemaBindings {
@@ -511,15 +602,29 @@ struct TypeScriptBackendRoutesEmitter {
 
         \(handlers)
 
-        export interface GeneratedHandlers<Bindings extends GeneratedSchemaBindings = {}> {
+        export interface GeneratedHandlers<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}> {
         \(fields.prepad())
         }
 
-        export function registerGeneratedRoutes<Bindings extends GeneratedSchemaBindings = {}>(app: Express, handlers: GeneratedHandlers<Bindings>, bindings?: Bindings, options?: GeneratedRouteOptions): void {
+        export function registerGeneratedRoutes<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}>(app: Express, handlers: GeneratedHandlers<Bindings, Integration>, bindings?: Bindings, options?: GeneratedRouteOptions<Integration>): void {
         \(schemaBindingValidation.prepad())
+        \(requestPolicyValidation.prepad())
         \(routes.prepad())
         }
         """
+    }
+
+    private func requestPolicyValidation(_ operations: [TypeScriptBackendOperationEmitter]) -> String {
+        var policies: [TypeScriptBackendOperationEmitter.RequestPolicy] = []
+        for operation in operations where operation.requestPolicy != .unsecured {
+            if !policies.contains(operation.requestPolicy) {
+                policies.append(operation.requestPolicy)
+            }
+        }
+        return policies.map { policy in
+            "if (!options?.integration?.\(policy.rawValue)) { throw new Error(\("Missing \(policy.rawValue) request policy".backendStringLiteral)); }"
+        }
+        .joined(separator: "\n")
     }
 
     private func codecImports(for dataType: ApiTypeSchema) -> [String]? {

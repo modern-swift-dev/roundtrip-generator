@@ -553,7 +553,7 @@ For a separate generated project, use Gradle 9.5.1 or provision its wrapper. Pub
 
 ## TypeScript Backend Integration
 
-Use `TypeScriptBackendApiPackageGenerator` for an Express 5 and Zod 4 backend package. The first backend slice supports unsecured relative JSON operations. Generated routes parse and validate the wire body, convert it to a mapped DTO for an application-owned handler, validate and serialize the handler result, and strip undeclared fields at both boundaries.
+Use `TypeScriptBackendApiPackageGenerator` for an Express 5 and Zod 4 backend package. Generated routes support secured, optional-authentication, and unsecured relative operations. They parse and validate wire input, convert it to a mapped DTO for an application-owned handler, validate and serialize the handler result, and strip undeclared fields at both boundaries.
 
 ```swift
 import TypeScriptBackendGenerator
@@ -575,6 +575,40 @@ registerGeneratedRoutes(app, {
     adminUsersCreate: async (input) => input
 });
 ```
+
+Authentication and request context remain application-owned. Supply a request policy for every secured or optional-authentication policy used by the package; registration fails before installing routes when either required policy is missing. An unsecured policy is optional, and unsecured handlers receive `undefined` when it is omitted.
+
+```ts
+const integration = {
+    secured: {
+        middleware: [requireSession],
+        context: (_request, response) => ({
+            user: response.locals.user,
+            requestId: response.locals.requestId
+        })
+    },
+    optional: {
+        middleware: [loadOptionalSession],
+        context: (_request, response) => ({
+            user: response.locals.user ?? null,
+            requestId: response.locals.requestId
+        })
+    },
+    unsecured: {
+        context: (_request, response) => ({ requestId: response.locals.requestId })
+    }
+};
+
+const handlers: GeneratedHandlers<{}, typeof integration> = {
+    adminUsersCreate: async (input, context) => saveUser(context.user, input)
+};
+
+registerGeneratedRoutes(app, handlers, undefined, { integration });
+```
+
+For each operation, policy middleware runs in declaration order, followed by context resolution, the route-local body parser, generated input validation, the endpoint handler, generated output validation, and response serialization. Middleware may finish the response without calling `next`, which prevents context resolution and business logic from running. Context types are inferred independently for secured, optional-authentication, and unsecured handlers.
+
+Application middleware, context resolvers, and endpoint handlers retain their original thrown errors. Generated input and output validation failures reach the Express error boundary as `GeneratedValidationError`, with `operationId`, `phase` (`"input"` or `"output"`), and `cause`. Install application error middleware after generated route registration to choose status codes, error codes, validation mappings, and response envelopes. Generated output is fully validated and serialized before its declared response headers are applied.
 
 Operations with declared route parameters receive a typed input object containing each mapped parameter property and, when present, a `body` property. Path, query, header, and cookie values are read using their declared wire names; header lookup is case-insensitive and percent-encoded cookie values are decoded once. Required values, scalar ranges, booleans, dates, times, enums, and comma-separated arrays are validated before the handler runs. Query, header, and cookie arrays use the same comma-separated encoding as the generated Swift client: an empty string is an empty array, an omitted optional value is `undefined`, and commas inside string elements are therefore not distinguishable from separators. Swift client initializer defaults are not applied when an HTTP parameter is omitted; only the declared requiredness controls whether omission is rejected or yields `undefined`.
 
@@ -618,6 +652,7 @@ npm install --prefix generated/backend
 npm run --prefix generated/backend build
 ROUNDTRIP_BACKEND_RUNTIME_TEST=1 swift test --filter TypeScriptBackendGeneratedPackageTests/generatedPackageCompilesAndServesItsRoute
 ROUNDTRIP_BACKEND_RUNTIME_TEST=1 swift test --filter TypeScriptBackendGeneratedPackageTests/generatedPackagePreservesRawAndBodylessTransport
+ROUNDTRIP_BACKEND_RUNTIME_TEST=1 swift test --filter TypeScriptBackendGeneratedPackageTests/generatedPackageIntegratesAuthenticationContextAndApplicationErrors
 ```
 
 The generated-package HTTP test is opt-in because it installs the reference Express/Zod dependency environment; the command above runs the strict TypeScript build and HTTP assertions explicitly.
@@ -635,7 +670,7 @@ The sample's generated files live under `src/generated`; its handwritten `src/se
 
 Raw and file-body operations use `Uint8Array` at the handler boundary. Binary request bodies use `express.raw` with the declared MIME type; file requests use a wildcard raw parser. A binary operation declaring `application/json` still remains raw and is not decoded as JSON. Existing applications may replace these parsers with `GeneratedRouteOptions.rawBodyParser`, while `jsonBodyParser` remains available for JSON routes. The route-local hooks make parser placement configurable, but an application-wide parser installed earlier has already consumed the bytes and cannot be undone; install broad parsers only after generated registration when their ordering would otherwise consume a declared raw body.
 
-Binary responses preserve their exact bytes and declared MIME type. Return the bytes directly for the default status, or use `generatedResponse(value, { status, headers })` from `src/generated/runtime.ts` to select one of the operation's acceptable statuses and add response headers such as pagination metadata. An unexpected status reaches the application's error boundary. `.none` operations and no-body statuses (`1xx`, `204`, `205`, and `304`) end without a response body while retaining headers. Absolute/runtime URLs, multipart operations, and unresolved bindings remain explicitly rejected until their later slices land.
+Binary responses preserve their exact bytes and declared MIME type. Return the bytes directly for the default status, or use `generatedResponse(value, { status, headers })` from `src/generated/runtime.ts` to select one of the operation's acceptable statuses and add response headers such as pagination metadata. An unexpected status reaches the application's error boundary. `.none` operations and no-body statuses (`1xx`, `204`, `205`, and `304`) end without a response body while retaining headers. Absolute/runtime URLs and multipart operations remain explicitly rejected until their later slices land.
 
 ## TypeScript Client Integration
 

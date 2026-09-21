@@ -5,6 +5,20 @@ struct TypeScriptBackendRuntimeEmitter {
 
         import { parse, parseNumberAndBigInt, stringify } from "lossless-json";
 
+        export class GeneratedValidationError extends Error {
+            readonly operationId: string;
+            readonly phase: "input" | "output";
+            readonly cause: unknown;
+
+            constructor(operationId: string, phase: "input" | "output", cause: unknown) {
+                super(`Generated ${phase} validation failed for ${operationId}`);
+                this.name = "GeneratedValidationError";
+                this.operationId = operationId;
+                this.phase = phase;
+                this.cause = cause;
+            }
+        }
+
         export interface GeneratedResponse<T> {
             readonly kind: "generated-response";
             readonly status: number;
@@ -176,7 +190,7 @@ struct TypeScriptBackendRuntimeEmitter {
         }
 
         type ParameterRequest = {
-            params: Record<string, string | undefined>;
+            params: Record<string, string | string[] | undefined>;
             query: unknown;
             get(name: string): string | undefined;
         };
@@ -187,8 +201,13 @@ struct TypeScriptBackendRuntimeEmitter {
             name: string
         ): string | undefined {
             switch (location) {
-                case "path":
-                    return request.params[name];
+                case "path": {
+                    const value = request.params[name];
+                    if (Array.isArray(value)) {
+                        throw new Error(`Invalid ${location} parameter: ${name}`);
+                    }
+                    return value;
+                }
                 case "query": {
                     const query = request.query;
                     if (typeof query !== "object" || query === null || Array.isArray(query)) {

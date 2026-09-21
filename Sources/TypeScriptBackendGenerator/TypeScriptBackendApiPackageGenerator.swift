@@ -54,9 +54,6 @@ public struct TypeScriptBackendApiPackageGenerator {
         }
         for operation in allOperations() {
             try validate(operation: operation)
-            guard operation.security == .unsecured else {
-                throw TypeScriptBackendGeneratorError.unsupportedSecurity(operationName: operation.name)
-            }
             guard case .relative = operation.path else {
                 throw TypeScriptBackendGeneratorError.unsupportedPath(operationName: operation.name)
             }
@@ -376,14 +373,15 @@ public struct TypeScriptBackendApiPackageGenerator {
         import {
             registerGeneratedRoutes,
             type GeneratedHandlers,
+            type GeneratedRequestIntegration,
             type GeneratedSchemaBindings,
             type GeneratedRouteOptions
         } from "./generated/routes.js";
 
-        export function createApp<Bindings extends GeneratedSchemaBindings = {}>(
-            handlers: GeneratedHandlers<Bindings>,
+        export function createApp<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}>(
+            handlers: GeneratedHandlers<Bindings, Integration>,
             bindings?: Bindings,
-            options?: GeneratedRouteOptions,
+            options?: GeneratedRouteOptions<Integration>,
         ): Express {
             const app = express();
             registerGeneratedRoutes(app, handlers, bindings, options);
