@@ -45,7 +45,7 @@ struct TypeScriptBackendOperationEmitter {
     }
 
     func handlerField() -> String {
-        "\(handlerName): \(operationTypeName)Handler<Bindings, Integration\(isMultipart ? ", Multipart" : "")>;"
+        "\(handlerName)?: \(operationTypeName)Handler<Bindings, Integration\(isMultipart ? ", Multipart" : "")>;"
     }
 
     var isMultipart: Bool {
@@ -93,7 +93,23 @@ struct TypeScriptBackendOperationEmitter {
         return lines.joined(separator: "\n")
     }
 
-    func routeSource() -> String {
+    func registrationSource() -> String {
+        let handlerVariable = "handler_\(handlerName)"
+        let policyValidation = requestPolicy == .unsecured
+            ? ""
+            : "if (!options?.integration?.\(requestPolicy.rawValue)) { throw new Error(\("Missing \(requestPolicy.rawValue) request policy".backendStringLiteral)); }"
+        return """
+        const \(handlerVariable) = handlers.\(handlerName);
+        if (\(handlerVariable)) {
+        \(schemaBindingValidation().prepad(4))
+        \(policyValidation.prepad(4))
+        \(multipartAdapterRegistrationSource().prepad(4))
+        \(routeSource(handlerVariable: handlerVariable).prepad(4))
+        }
+        """
+    }
+
+    private func routeSource(handlerVariable: String) -> String {
         let path = relativePath()
         let method = operation.method.rawValue
         let status = operation.acceptableStatuses.first ?? 200
@@ -126,7 +142,7 @@ struct TypeScriptBackendOperationEmitter {
                 }
 
                 try {
-                    const handlerOutput = await handlers.\(handlerName)(input, generatedRequestContext<GeneratedHandlerContext<Integration, "\(requestPolicy.rawValue)">>(request));
+                    const handlerOutput = await \(handlerVariable)(input, generatedRequestContext<GeneratedHandlerContext<Integration, "\(requestPolicy.rawValue)">>(request));
                     try {
                         const output = normalizeGeneratedResponse(handlerOutput, \(status));
                         validateGeneratedResponseStatus(output.status, [\(responseStatuses.map(String.init).joined(separator: ", "))]);
@@ -582,14 +598,7 @@ struct TypeScriptBackendRoutesEmitter {
         }
         let handlers = operations.map { $0.handlerDeclaration() }.joined(separator: "\n")
         let fields = operations.map { $0.handlerField() }.joined(separator: "\n")
-        let routes = operations.map { $0.routeSource() }.joined(separator: "\n")
-        let schemaBindingValidation = operations.map { $0.schemaBindingValidation() }
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n")
-        let requestPolicyValidation = requestPolicyValidation(operations)
-        let multipartAdapterRegistration = operations.map { $0.multipartAdapterRegistrationSource() }
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n")
+        let routes = operations.map { $0.registrationSource() }.joined(separator: "\n")
         let importedDataTypes: [ApiTypeSchema] = operations.flatMap { operation in
             [operation.operation.request.dataType, operation.operation.response.dataType]
                 .compactMap(\.self)
@@ -599,7 +608,7 @@ struct TypeScriptBackendRoutesEmitter {
         let importedSymbols = importedDataTypes.flatMap { codecImports(for: $0) ?? [] }
             .uniqued()
             .sorted()
-        let generatedContent = [handlers, fields, routes, schemaBindingValidation, requestPolicyValidation, multipartAdapterRegistration]
+        let generatedContent = [handlers, fields, routes]
             .joined(separator: "\n")
         let imports = importedSymbols
             .filter { symbol in
@@ -754,25 +763,9 @@ struct TypeScriptBackendRoutesEmitter {
         }
 
         export function registerGeneratedRoutes<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}>(app: Express, handlers: GeneratedHandlers<Bindings, Integration, Multipart>, bindings?: Bindings, options?: GeneratedRouteOptions<Integration, Multipart>): void {
-        \(schemaBindingValidation.prepad())
-        \(requestPolicyValidation.prepad())
-        \(multipartAdapterRegistration.prepad())
         \(routes.prepad())
         }
         """
-    }
-
-    private func requestPolicyValidation(_ operations: [TypeScriptBackendOperationEmitter]) -> String {
-        var policies: [TypeScriptBackendOperationEmitter.RequestPolicy] = []
-        for operation in operations where operation.requestPolicy != .unsecured {
-            if !policies.contains(operation.requestPolicy) {
-                policies.append(operation.requestPolicy)
-            }
-        }
-        return policies.map { policy in
-            "if (!options?.integration?.\(policy.rawValue)) { throw new Error(\("Missing \(policy.rawValue) request policy".backendStringLiteral)); }"
-        }
-        .joined(separator: "\n")
     }
 
     private func codecImports(for dataType: ApiTypeSchema) -> [String]? {

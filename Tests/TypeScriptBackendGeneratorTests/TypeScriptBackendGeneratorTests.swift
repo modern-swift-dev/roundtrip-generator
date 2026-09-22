@@ -75,6 +75,26 @@ struct TypeScriptBackendGeneratorTests {
         #expect(routes.contains("Success | Failure"))
     }
 
+    @Test func `generated backend registers only supplied handlers`() throws {
+        let user = ApiTypeSchema.object(typeName: "User", properties: [.string("name")])
+        let operation = ApiOperation.get(
+            name: "read",
+            path: .relative("/users"),
+            security: .secured,
+            response: user.asRef,
+        )
+
+        let files = try TypeScriptBackendApiPackageGenerator(
+            package: testPackage(operation: operation, references: [user]),
+        ).generatedFiles()
+        let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+
+        #expect(routes.contains("adminUsersRead?: AdminUsersReadHandler"))
+        #expect(routes.contains("const handler_adminUsersRead = handlers.adminUsersRead;"))
+        #expect(routes.contains("if (handler_adminUsersRead) {"))
+        #expect(routes.contains("await handler_adminUsersRead(input"))
+    }
+
     @Test func `generated backend preserves boolean literal constraints`() throws {
         let failure = ApiTypeSchema.object(typeName: "Failure", properties: [.boolLiteral("success", value: false)])
         let operation = ApiOperation.get(
@@ -153,8 +173,8 @@ struct TypeScriptBackendGeneratorTests {
 
         let files = try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()
         let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
-        #expect(routes.contains("adminFilesUpload: AdminFilesUploadHandler"))
-        #expect(routes.contains("adminFilesHealth: AdminFilesHealthHandler"))
+        #expect(routes.contains("adminFilesUpload?: AdminFilesUploadHandler"))
+        #expect(routes.contains("adminFilesHealth?: AdminFilesHealthHandler"))
         #expect(routes.contains("options?.rawBodyParser ?? express.raw({ type: \"application/json\" })"))
         #expect(routes.contains("options?.rawBodyParser ?? express.raw({ type: \"*/*\" })"))
         #expect(routes.contains("output.value instanceof Uint8Array"))
