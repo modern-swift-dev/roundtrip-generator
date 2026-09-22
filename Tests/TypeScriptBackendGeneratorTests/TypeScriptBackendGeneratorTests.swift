@@ -389,6 +389,7 @@ struct TypeScriptBackendGeneratorTests {
         #expect(models.contains("parseDouble"))
         #expect(runtime.contains(#"from "lossless-json""#))
         #expect(runtime.contains("parseNumberAndBigInt"))
+        #expect(runtime.contains("typeof value !== \"string\" && !(value instanceof Uint8Array)"))
         #expect(runtime.contains("stringifyJsonResponse"))
         #expect(routes.contains("express.raw"))
         #expect(routes.contains("parseJsonBody"))

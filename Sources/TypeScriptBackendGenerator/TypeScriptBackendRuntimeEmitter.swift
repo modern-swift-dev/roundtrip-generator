@@ -66,7 +66,10 @@ struct TypeScriptBackendRuntimeEmitter {
             return !(status >= 100 && status < 200) && ![204, 205, 304].includes(status);
         }
 
-        export function parseJsonBody(value: Uint8Array | string): unknown {
+        export function parseJsonBody(value: unknown): unknown {
+            if (typeof value !== "string" && !(value instanceof Uint8Array)) {
+                return value;
+            }
             const text = typeof value === "string" ? value : new TextDecoder().decode(value);
             return parse(text, undefined, { parseNumber: parseNumberAndBigInt });
         }
