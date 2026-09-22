@@ -71,6 +71,18 @@ import Testing
             ))
     }
 
+    @Test func `optional model properties are nullable`() throws {
+        let profile = ApiTypeSchema.object(typeName: "Profile", properties: [
+            .string("name").optional
+        ])
+        let package = ApiPackage(name: "Optional", targetDirUrl: URL(fileURLWithPath: "/unused"), modules: [], references: [profile])
+
+        let yaml = try OpenApiYamlPackageGenerator(package: package).generatedFile().contents
+
+        #expect(yaml.contains("name:\n          type: \"string\"\n          nullable: true"))
+        #expect(!yaml.contains("required:\n        - \"name\""))
+    }
+
     @Test func `generated yaml excludes runtime paths and includes multipart binary cookie and external references`() throws {
         let receipt = ApiTypeSchema.object(typeName: "Receipt", properties: [
             .string("state")
