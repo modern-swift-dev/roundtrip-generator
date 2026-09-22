@@ -285,7 +285,8 @@ struct TypeScriptBackendOperationEmitter {
                     response.status(output.status).end();
                     return;
                 }
-                response.status(output.status).type(\(mimeType.backendStringLiteral)).send(output.value);
+                const contentType = output.headers["Content-Type"] ?? output.headers["content-type"] ?? \(mimeType.backendStringLiteral);
+                response.status(output.status).type(contentType).send(output.value);
                 """
             case let .json(dataType):
                 guard let dataType else {

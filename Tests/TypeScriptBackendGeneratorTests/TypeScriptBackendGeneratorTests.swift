@@ -393,6 +393,7 @@ struct TypeScriptBackendGeneratorTests {
         #expect(runtime.contains("stringifyJsonResponse"))
         #expect(routes.contains("express.raw"))
         #expect(routes.contains("parseJsonBody"))
+        #expect(routes.contains("output.headers[\"Content-Type\"] ?? output.headers[\"content-type\"]"))
         #expect(routes.contains("stringifyJsonResponse"))
         #expect(packageJSON.contains(#""lossless-json": "^4.3.0""#))
     }
