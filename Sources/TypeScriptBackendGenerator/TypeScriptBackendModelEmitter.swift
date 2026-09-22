@@ -7,25 +7,19 @@ struct TypeScriptBackendModelEmitter {
 
     func source() -> String {
         let declarations = dataTypes.map { declaration(for: $0) }.joined(separator: "\n\n")
+        let runtimeImports = [
+            "base64ToUint8Array", "isValidBase64", "isValidCalendarDate", "isValidISODate",
+            "isValidLocalTime", "isValidURL", "isValidUUID", "parseDate", "parseDouble",
+            "parseNarrowInteger", "parseURL", "serializeDate", "serializeURL", "uint8ArrayToBase64"
+        ]
+        .filter(declarations.contains)
+        .joined(separator: ",\n    ")
         return """
         // Generated code. Do not edit.
 
         import { z } from "zod";
         import {
-            base64ToUint8Array,
-            isValidBase64,
-            isValidCalendarDate,
-            isValidISODate,
-            isValidLocalTime,
-            isValidURL,
-            isValidUUID,
-            parseDate,
-            parseDouble,
-            parseNarrowInteger,
-            parseURL,
-            serializeDate,
-            serializeURL,
-            uint8ArrayToBase64
+            \(runtimeImports)
         } from "./runtime.js";
 
         export interface PagedResults<T> {
@@ -74,6 +68,10 @@ struct TypeScriptBackendModelEmitter {
 
     private func objectDeclaration(typeName: String, properties: [ApiModelProperty]) -> String {
         let publishedProperties = properties.filter(\.publishedAsField)
+        let encodeParameterName = publishedProperties.isEmpty ? "_value" : "value"
+        let decodedObject = publishedProperties.isEmpty
+            ? "\(typeName.backendTypeName)WireSchema().parse(value);"
+            : "const object = \(typeName.backendTypeName)WireSchema().parse(value) as Record<string, unknown>;"
         let interfaceFields = publishedProperties.map { property in
             let patchable = property.dataType.isBackendPatchableValue
             let optional = property.required && !patchable ? "" : "?"
@@ -82,7 +80,7 @@ struct TypeScriptBackendModelEmitter {
         }.joined(separator: "\n")
         let schemaFields = publishedProperties.map { property in
             let optional = property.dataType.isBackendPatchableValue ? ".optional()" : property.required ? "" : ".nullable().optional()"
-            return "\(property.rawName.backendStringLiteral): \(schemaExpression(for: property.dataType))\(optional),"
+            return "\(property.rawName.backendStringLiteral): \(schemaExpression(for: property))\(optional),"
         }.joined(separator: "\n")
         let decodedFields = publishedProperties.map { property in
             let value = "object[\(property.rawName.backendStringLiteral)]"
@@ -116,13 +114,13 @@ struct TypeScriptBackendModelEmitter {
         }
 
         export function decode\(typeName.backendTypeName)(value: unknown): \(typeName.backendTypeName) {
-            const object = \(typeName.backendTypeName)WireSchema().parse(value) as Record<string, unknown>;
+            \(decodedObject)
             return {
         \(decodedFields.prepad(2))
             };
         }
 
-        export function encode\(typeName.backendTypeName)(value: \(typeName.backendTypeName)): unknown {
+        export function encode\(typeName.backendTypeName)(\(encodeParameterName): \(typeName.backendTypeName)): unknown {
             return \(typeName.backendTypeName)WireSchema().parse({
         \(encodedFields.prepad(2))
             });
@@ -394,6 +392,15 @@ struct TypeScriptBackendModelEmitter {
         }
     }
 
+    private func schemaExpression(for property: ApiModelProperty) -> String {
+        switch property.constraint {
+            case let .booleanLiteral(value):
+                "z.literal(\(value))"
+            case nil:
+                schemaExpression(for: property.dataType)
+        }
+    }
+
     func decodeExpression(for dataType: ApiTypeSchema, value: String, optional: Bool = false) -> String {
         let expression: String
         switch dataType {
@@ -458,7 +465,7 @@ struct TypeScriptBackendModelEmitter {
             case let .array(type):
                 return "\(value).map((item) => \(encodeExpression(for: type, value: "item")))"
             case let .keyedByString(type, isOptional):
-                let itemValue = "item as \(typeDeclaration(for: type))"
+                let itemValue = "(item as \(typeDeclaration(for: type)))"
                 let encoded = encodeExpression(for: type, value: itemValue)
                 let item = isOptional ? "(item == null ? item : \(encoded))" : encoded
                 return "Object.fromEntries(Object.entries(\(value)).map(([key, item]) => [key, \(item)]))"

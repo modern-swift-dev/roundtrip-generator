@@ -212,6 +212,36 @@ struct TypeScriptBackendGeneratedPackageTests {
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
+    func generatedPackageServesDeclaredPublicErrors() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let success = ApiTypeSchema.object(typeName: "Success", properties: [.string("value")])
+        let failure = ApiTypeSchema.object(typeName: "Failure", properties: [.string("code")])
+        let operation = ApiOperation.get(
+            name: "read",
+            path: .relative("/records"),
+            security: .unsecured,
+            response: success.asRef,
+            publicErrors: [.init(status: 409, response: .json(failure.asRef))],
+        )
+        let package = ApiPackage(
+            name: "Errors",
+            targetDirUrl: root,
+            modules: [ApiModule(name: "Records", definitions: [ApiService(name: "Records", operations: [operation], references: [success, failure])])],
+        )
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for file in try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles() {
+            try file.write(to: root)
+        }
+        try publicErrorRuntimeTest().write(to: root.appendingPathComponent("test.mjs"), atomically: true, encoding: .utf8)
+
+        try run(["install", "--ignore-scripts", "--package-lock=false"], in: root)
+        try run(["run", "build"], in: root)
+        try run(["exec", "--", "node", "test.mjs"], in: root)
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
     func generatedPackagePreservesRawAndBodylessTransport() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -646,6 +676,30 @@ struct TypeScriptBackendGeneratedPackageTests {
             assert.equal(health.status, 204);
             assert.equal(health.headers.get("x-health"), "ok");
             assert.equal(await health.text(), "");
+        } finally {
+            await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        }
+        """
+    }
+
+    private func publicErrorRuntimeTest() -> String {
+        """
+        import assert from "node:assert/strict";
+        import express from "express";
+        import { registerGeneratedRoutes } from "./dist/generated/routes.js";
+        import { generatedResponse } from "./dist/generated/runtime.js";
+
+        const app = express();
+        registerGeneratedRoutes(app, {
+            recordsRecordsRead: async () => generatedResponse({ code: "CONFLICT", internal: "must-not-escape" }, { status: 409 })
+        });
+        const server = app.listen(0);
+        await new Promise((resolve) => server.once("listening", resolve));
+        try {
+            const address = server.address();
+            const response = await fetch(`http://127.0.0.1:${address.port}/records`);
+            assert.equal(response.status, 409);
+            assert.deepEqual(await response.json(), { code: "CONFLICT" });
         } finally {
             await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
         }

@@ -4,7 +4,7 @@ import GeneratorModels
 import Testing
 
 @Suite(.serialized) struct OpenApiYamlGeneratorTests {
-    @Test func `shared reference graphs register each schema once`() {
+    @Test func `shared reference graphs register each schema once`() throws {
         let depth = 24
         var model = ApiTypeSchema.object(typeName: "Leaf", properties: [.string("value")])
         for level in 0 ..< depth {
@@ -18,13 +18,13 @@ import Testing
             modules: [], referencedModules: [], references: [model],
             commonReferences: [], imports: [],
         )
-        let yaml = OpenApiYamlPackageGenerator(package: package).generatedFile().contents
+        let yaml = try OpenApiYamlPackageGenerator(package: package).generatedFile().contents
         #expect(yaml.split(separator: "\n").filter { $0 == "      type: \"object\"" }.count == depth + 1)
         #expect(yaml.components(separatedBy: "#/components/schemas/Leaf").count - 1 == 2)
         #expect(yaml.contains("    Leaf:"))
     }
 
-    @Test func `deeply nested models register each schema`() {
+    @Test func `deeply nested models register each schema`() throws {
         // A single chain previously traversed each subtree twice at every level.
         let depth = 18
         var model = ApiTypeSchema.object(typeName: "Leaf", properties: [.string("value")])
@@ -38,7 +38,7 @@ import Testing
             modules: [], referencedModules: [], references: [model],
             commonReferences: [], imports: [],
         )
-        let yaml = OpenApiYamlPackageGenerator(package: package).generatedFile().contents
+        let yaml = try OpenApiYamlPackageGenerator(package: package).generatedFile().contents
         #expect(yaml.split(separator: "\n").filter { $0 == "      type: \"object\"" }.count == depth + 1)
         #expect(yaml.contains("    Leaf:"))
         for level in 0 ..< depth {
@@ -47,7 +47,7 @@ import Testing
     }
 
     @Test func `generated yaml contains paths schemas bodies and security`() throws {
-        let files = OpenApiYamlPackageGenerator(package: testPackage()).generatedFiles()
+        let files = try OpenApiYamlPackageGenerator(package: testPackage()).generatedFiles()
         let file = try #require(files.first)
         let yaml = file.contents
 
@@ -71,7 +71,7 @@ import Testing
             ))
     }
 
-    @Test func `generated yaml includes runtime multipart binary cookie and external references`() {
+    @Test func `generated yaml excludes runtime paths and includes multipart binary cookie and external references`() throws {
         let receipt = ApiTypeSchema.object(typeName: "Receipt", properties: [
             .string("state")
         ])
@@ -107,18 +107,89 @@ import Testing
             imports: [],
         )
 
-        let yaml = OpenApiYamlPackageGenerator(package: package).generatedFile().contents
+        let yaml = try OpenApiYamlPackageGenerator(package: package).generatedFile().contents
 
-        #expect(yaml.contains(#""/_runtime/{runtimeUrl}":"#))
-        #expect(yaml.contains("x-runtime-url: true"))
-        #expect(yaml.contains("format: \"uri\""))
+        #expect(!yaml.contains(#""/_runtime/{runtimeUrl}":"#))
+        #expect(!yaml.contains("x-runtime-url: true"))
         #expect(yaml.contains("multipart/form-data:"))
         #expect(yaml.contains("file:\n                  type: \"string\"\n                  format: \"binary\""))
         #expect(yaml.contains("\"application/zip\":"))
         #expect(yaml.contains("in: \"cookie\""))
-        #expect(yaml.contains("PagedResultsReceipt:"))
-        #expect(yaml.contains("$ref: \"#/components/schemas/PagedResultsReceipt\""))
         #expect(yaml.contains("- {}"))
+    }
+
+    @Test func `generated yaml documents declared public errors and excludes client only paths`() throws {
+        let success = ApiTypeSchema.object(typeName: "Success", properties: [.string("value")])
+        let failure = ApiTypeSchema.object(typeName: "Failure", properties: [.string("code")])
+        let operation = ApiOperation.get(
+            name: "read",
+            path: .relative("/records"),
+            security: .unsecured,
+            response: success.asRef,
+            publicErrors: [.init(status: 409, response: .json(failure.asRef))],
+        )
+        let clientOnly = ApiOperation.get(
+            name: "receipt",
+            path: .absolute("https://example.com/receipt"),
+            security: .unsecured,
+            response: success.asRef,
+        )
+        let package = ApiPackage(
+            name: "Errors",
+            targetDirUrl: URL(fileURLWithPath: "/tmp/openapi"),
+            modules: [ApiModule(name: "Records", definitions: [ApiService(name: "Records", operations: [operation, clientOnly], references: [success, failure])])],
+        )
+
+        let yaml = try OpenApiYamlPackageGenerator(package: package).generatedFile().contents
+
+        #expect(yaml.contains(#""409":"#))
+        #expect(yaml.contains("#/components/schemas/Failure"))
+        #expect(!yaml.contains("example.com/receipt"))
+        #expect(!yaml.contains("/_runtime/"))
+    }
+
+    @Test func `generated yaml preserves boolean literal constraints`() throws {
+        let failure = ApiTypeSchema.object(typeName: "Failure", properties: [.boolLiteral("success", value: false)])
+        let operation = ApiOperation.get(
+            name: "read",
+            path: .relative("/records"),
+            security: .unsecured,
+            response: nil,
+            publicErrors: [.init(status: 409, response: .json(failure.asRef))],
+        )
+        let package = ApiPackage(
+            name: "Errors",
+            targetDirUrl: URL(fileURLWithPath: "/tmp/openapi"),
+            modules: [ApiModule(name: "Records", definitions: [ApiService(name: "Records", operations: [operation], references: [failure])])],
+        )
+
+        let yaml = try OpenApiYamlPackageGenerator(package: package).generatedFile().contents
+
+        #expect(yaml.contains("enum:\n            - false"))
+    }
+
+    @Test func `duplicate method and path is rejected`() {
+        let first = ApiOperation.get(
+            name: "first",
+            path: .relative("/records"),
+            security: .unsecured,
+            response: nil,
+        )
+        let second = ApiOperation.get(
+            name: "second",
+            path: .relative("/records"),
+            security: .secured,
+            response: nil,
+        )
+        let package = ApiPackage(
+            name: "Duplicate",
+            targetDirUrl: URL(fileURLWithPath: "/tmp/openapi"),
+            modules: [ApiModule(name: "Records", definitions: [ApiService(name: "Records", operations: [first, second])])],
+        )
+
+        #expect(throws: OpenApiYamlPackageGeneratorError.duplicateMethodAndPath("GET /records")) {
+            try OpenApiYamlPackageGenerator(package: package).generatedFile()
+        }
     }
 
     @Test func `write refuses to overwrite user owned file`() throws {
@@ -127,7 +198,7 @@ import Testing
         let fileURL = root.appendingPathComponent("openapi.yaml")
         try "user file\n".write(to: fileURL, atomically: true, encoding: .utf8)
 
-        let file = OpenApiYamlPackageGenerator(package: testPackage(targetDirUrl: root)).generatedFile()
+        let file = try OpenApiYamlPackageGenerator(package: testPackage(targetDirUrl: root)).generatedFile()
 
         #expect(throws: OpenApiYamlGeneratedTextFileError.refusingToOverwriteUserFile("openapi.yaml")) {
             try file.write(to: root)

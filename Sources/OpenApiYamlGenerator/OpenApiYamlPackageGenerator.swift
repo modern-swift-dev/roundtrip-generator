@@ -4,6 +4,10 @@ import GeneratorModels
 
 // swiftlint:disable cyclomatic_complexity
 
+public enum OpenApiYamlPackageGeneratorError: Error, Equatable {
+    case duplicateMethodAndPath(String)
+}
+
 public struct OpenApiYamlPackageGenerator {
     public let package: ApiPackage
     public let options: OpenApiYamlGeneratorOptions
@@ -17,15 +21,16 @@ public struct OpenApiYamlPackageGenerator {
         try generatedFile().write(to: package.targetDirUrl)
     }
 
-    public func generatedFile() -> OpenApiYamlGeneratedTextFile {
-        OpenApiYamlGeneratedTextFile(relativePath: options.fileName, contents: render())
+    public func generatedFile() throws -> OpenApiYamlGeneratedTextFile {
+        OpenApiYamlGeneratedTextFile(relativePath: options.fileName, contents: try render())
     }
 
-    public func generatedFiles() -> [OpenApiYamlGeneratedTextFile] {
-        [generatedFile()]
+    public func generatedFiles() throws -> [OpenApiYamlGeneratedTextFile] {
+        [try generatedFile()]
     }
 
-    private func render() -> String {
+    private func render() throws -> String {
+        try validateUniqueMethodAndPath()
         var context = OpenApiYamlRenderContext()
         registerComponents(in: &context)
 
@@ -66,6 +71,18 @@ public struct OpenApiYamlPackageGenerator {
             }
         }
         return yaml.output
+    }
+
+    private func validateUniqueMethodAndPath() throws {
+        for (path, operations) in groupedOperations() {
+            let duplicateMethods = Dictionary(grouping: operations, by: { $0.operation.method })
+                .first { $0.value.count > 1 }
+            if let duplicateMethods {
+                throw OpenApiYamlPackageGeneratorError.duplicateMethodAndPath(
+                    "\(duplicateMethods.key.httpMethod) \(path)"
+                )
+            }
+        }
     }
 
     private func renderPaths(_ yaml: inout OpenApiYamlWriter, context: OpenApiYamlRenderContext) {
@@ -140,6 +157,14 @@ public struct OpenApiYamlPackageGenerator {
                     yaml.scalar("description", HTTPURLResponse.localizedString(forStatusCode: status).capitalized)
                     if status.canCarryResponseBody {
                         renderResponseContent(operation.response, &yaml, context: context)
+                    }
+                }
+            }
+            for error in operation.publicErrors.sorted(by: { $0.status < $1.status }) {
+                yaml.map(OpenApiYamlWriter.quotedKey("\(error.status)")) {
+                    yaml.scalar("description", HTTPURLResponse.localizedString(forStatusCode: error.status).capitalized)
+                    if error.status.canCarryResponseBody {
+                        renderResponseContent(error.response, &yaml, context: context)
                     }
                 }
             }
@@ -422,6 +447,9 @@ public struct OpenApiYamlPackageGenerator {
                 for property in published {
                     yaml.map(OpenApiYamlWriter.quotedKey(property.rawName)) {
                         renderSchema(property.dataType, &yaml, context: &context)
+                        if case let .booleanLiteral(value) = property.constraint {
+                            yaml.list("enum", scalars: [value])
+                        }
                     }
                 }
             }
@@ -582,6 +610,9 @@ public struct OpenApiYamlPackageGenerator {
         for module in package.modules {
             for definition in module.definitions {
                 for operation in definition.operations {
+                    guard case .relative = operation.path else {
+                        continue
+                    }
                     let item = OpenApiYamlOperation(
                         moduleName: module.name,
                         definitionName: definition.name,
@@ -631,6 +662,11 @@ public struct OpenApiYamlPackageGenerator {
                     }
                     if let responseType = operation.response.dataType {
                         context.registerUsed(type: responseType)
+                    }
+                    for error in operation.publicErrors {
+                        if let responseType = error.response.dataType {
+                            context.registerUsed(type: responseType)
+                        }
                     }
                     for parameter in operation.expandedParameters {
                         context.registerUsed(parameterType: parameter.dataType)

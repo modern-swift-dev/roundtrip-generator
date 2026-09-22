@@ -40,12 +40,12 @@ struct TypeScriptBackendOperationEmitter {
         let inputDeclaration = parameterInputDeclaration()
         return """
         \(inputDeclaration)
-        export type \(operationTypeName)Handler<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}> = (input: GeneratedHandlerInput<Bindings[\"\(handlerName)\"], \(requestType)>, context: GeneratedHandlerContext<Integration, "\(requestPolicy.rawValue)">) => GeneratedHandlerOutput<Bindings[\"\(handlerName)\"], \(responseType)>;
+        export type \(operationTypeName)Handler<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}\(isMultipart ? ", Multipart extends GeneratedMultipartAdapters = {}" : "")> = (input: GeneratedHandlerInput<Bindings[\"\(handlerName)\"], \(requestType)>, context: GeneratedHandlerContext<Integration, "\(requestPolicy.rawValue)">) => GeneratedHandlerOutput<Bindings[\"\(handlerName)\"], \(responseType)>;
         """
     }
 
     func handlerField() -> String {
-        "\(handlerName): \(operationTypeName)Handler<Bindings, Integration, Multipart>;"
+        "\(handlerName): \(operationTypeName)Handler<Bindings, Integration\(isMultipart ? ", Multipart" : "")>;"
     }
 
     var isMultipart: Bool {
@@ -129,7 +129,7 @@ struct TypeScriptBackendOperationEmitter {
                     const handlerOutput = await handlers.\(handlerName)(input, generatedRequestContext<GeneratedHandlerContext<Integration, "\(requestPolicy.rawValue)">>(request));
                     try {
                         const output = normalizeGeneratedResponse(handlerOutput, \(status));
-                        validateGeneratedResponseStatus(output.status, [\(operation.acceptableStatuses.map(String.init).joined(separator: ", "))]);
+                        validateGeneratedResponseStatus(output.status, [\(responseStatuses.map(String.init).joined(separator: ", "))]);
             \(responseHandling().prepad(8))
                     } catch (error) {
                         next(new GeneratedValidationError(\(operationIdentifier.backendStringLiteral), "output", error));
@@ -177,7 +177,14 @@ struct TypeScriptBackendOperationEmitter {
     }
 
     private func handlerResponseType() -> String {
-        switch operation.response {
+        ([operation.response] + operation.publicErrors.map(\.response))
+            .map(handlerResponseType(for:))
+            .uniqued()
+            .joined(separator: " | ")
+    }
+
+    private func handlerResponseType(for response: ApiResponseBody) -> String {
+        switch response {
             case .none:
                 "void"
             case .binary:
@@ -231,7 +238,19 @@ struct TypeScriptBackendOperationEmitter {
     }
 
     private func responseHandling() -> String {
-        switch operation.response {
+        let publicErrorHandling = operation.publicErrors.map { error in
+            """
+            if (output.status === \(error.status)) {
+            \(responseHandling(for: error.response, usesOutputBinding: false).prepad(4))
+                return;
+            }
+            """
+        }.joined(separator: "\n")
+        return publicErrorHandling + responseHandling(for: operation.response, usesOutputBinding: true)
+    }
+
+    private func responseHandling(for response: ApiResponseBody, usesOutputBinding: Bool) -> String {
+        switch response {
             case .none:
                 return """
                 if (output.value !== undefined) {
@@ -256,8 +275,18 @@ struct TypeScriptBackendOperationEmitter {
                 guard let dataType else {
                     return "response.status(output.status).end();"
                 }
+                let responseEncoder = models.encodeRootExpression(for: dataType, value: usesOutputBinding ? "publicOutput" : "publicErrorOutput")
+                if !usesOutputBinding {
+                    let responseType = models.typeDeclaration(for: dataType)
+                    return """
+                    const publicErrorOutput = output.value as \(responseType);
+                    const body = \(responseEncoder);
+                    const responseBody = stringifyJsonResponse(body);
+                    \(responseHeadersSource())
+                    response.status(output.status).type("application/json").send(responseBody);
+                    """
+                }
                 let responseType = models.typeDeclaration(for: dataType)
-                let responseEncoder = models.encodeRootExpression(for: dataType, value: "publicOutput")
                 return """
                 let publicOutput: GeneratedWireOutput<Bindings["\(handlerName)"], \(responseType)>;
                 try {
@@ -286,6 +315,10 @@ struct TypeScriptBackendOperationEmitter {
         """
     }
 
+    private var responseStatuses: [Int] {
+        operation.acceptableStatuses + operation.publicErrors.map(\.status)
+    }
+
     private func parameterInputDeclaration() -> String {
         guard !operation.expandedParameters.isEmpty else {
             return ""
@@ -310,7 +343,7 @@ struct TypeScriptBackendOperationEmitter {
             case let .json(dataType):
                 dataType.map {
                     "const body = \(models.decodeExpression(for: $0, value: "parseJsonBody(request.body)"));"
-                } ?? ""
+                } ?? "const body = undefined;"
             case .binary,
                  .file:
                 """
@@ -539,8 +572,11 @@ struct TypeScriptBackendRoutesEmitter {
     func source() -> String {
         let operations = package.modules.flatMap { module in
             module.definitions.flatMap { definition in
-                definition.operations.map {
-                    TypeScriptBackendOperationEmitter(module: module, definition: definition, operation: $0, models: models)
+                definition.operations.compactMap { operation -> TypeScriptBackendOperationEmitter? in
+                    guard case .relative = operation.path else {
+                        return nil
+                    }
+                    return TypeScriptBackendOperationEmitter(module: module, definition: definition, operation: operation, models: models)
                 }
             }
         }
@@ -554,50 +590,44 @@ struct TypeScriptBackendRoutesEmitter {
         let multipartAdapterRegistration = operations.map { $0.multipartAdapterRegistrationSource() }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
-        let importedDataTypes = operations.flatMap { operation in
+        let importedDataTypes: [ApiTypeSchema] = operations.flatMap { operation in
             [operation.operation.request.dataType, operation.operation.response.dataType]
                 .compactMap(\.self)
+                + operation.operation.publicErrors.compactMap(\.response.dataType)
                 + operation.operation.expandedParameters.compactMap(\.dataType.backendDataType)
         }
-        let imports = importedDataTypes.flatMap { codecImports(for: $0) ?? [] }
+        let importedSymbols = importedDataTypes.flatMap { codecImports(for: $0) ?? [] }
             .uniqued()
             .sorted()
+        let generatedContent = [handlers, fields, routes, schemaBindingValidation, requestPolicyValidation, multipartAdapterRegistration]
+            .joined(separator: "\n")
+        let imports = importedSymbols
+            .filter { symbol in
+                if symbol.hasPrefix("type ") {
+                    return generatedContent.contains(symbol.replacingOccurrences(of: "type ", with: ""))
+                }
+                return generatedContent.contains("\(symbol)(")
+            }
             .joined(separator: ",\n    ")
+        let runtimeImports = [
+            "base64ToUint8Array", "isValidBase64", "isValidCalendarDate", "isValidISODate",
+            "isValidLocalTime", "isValidURL", "isValidUUID", "parseParameterArray",
+            "parseParameterBigInt", "parseParameterBoolean", "parseParameterDate",
+            "parseParameterDateTime", "parseParameterInteger", "parseParameterNarrowInteger",
+            "parseParameterString", "parseParameterTime", "parseDate", "parseDouble",
+            "parseJsonBody", "parseNarrowInteger", "parseURL", "readRequestParameter",
+            "generatedResponseHasBody", "normalizeGeneratedResponse", "serializeDate",
+            "serializeURL", "stringifyJsonResponse", "validateGeneratedResponseStatus", "uint8ArrayToBase64"
+        ]
+        .filter(generatedContent.contains)
+        .joined(separator: ",\n    ")
         return """
         // Generated code. Do not edit.
 
         import express, { type Express, type Request, type RequestHandler, type Response } from "express";
         import { z } from "zod";
         import {
-            base64ToUint8Array,
-            isValidBase64,
-            isValidCalendarDate,
-            isValidISODate,
-            isValidLocalTime,
-            isValidURL,
-            isValidUUID,
-            parseParameterArray,
-            parseParameterBigInt,
-            parseParameterBoolean,
-            parseParameterDate,
-            parseParameterDateTime,
-            parseParameterInteger,
-            parseParameterNarrowInteger,
-            parseParameterString,
-            parseParameterTime,
-            parseDate,
-            parseDouble,
-            parseJsonBody,
-            parseNarrowInteger,
-            parseURL,
-            readRequestParameter,
-            generatedResponseHasBody,
-            normalizeGeneratedResponse,
-            serializeDate,
-            serializeURL,
-            stringifyJsonResponse,
-            validateGeneratedResponseStatus,
-            uint8ArrayToBase64
+            \(runtimeImports)
         } from "./runtime.js";
         import { GeneratedValidationError, type GeneratedResponse } from "./runtime.js";
         import {
@@ -756,6 +786,7 @@ struct TypeScriptBackendRoutesEmitter {
                 [
                     "decode\(typeName.backendTypeName)",
                     "encode\(typeName.backendTypeName)",
+                    "\(typeName.backendTypeName)WireSchema",
                     "type \(typeName.backendTypeName)"
                 ]
             case let .array(type),

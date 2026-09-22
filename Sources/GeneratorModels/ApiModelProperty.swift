@@ -2,6 +2,10 @@ import Foundation
 import GeneratorBuilder
 
 /// A property for a ``ApiTypeSchema/object(typeName:properties:protocols:isValueType:uuid:)``
+public enum ApiModelPropertyConstraint: Sendable {
+    case booleanLiteral(Bool)
+}
+
 public struct ApiModelProperty: Sendable {
     /// The raw name, for the coding key
     public var rawName: String
@@ -24,6 +28,9 @@ public struct ApiModelProperty: Sendable {
     /// Published as Field
     public var publishedAsField: Bool = true
 
+    /// Optional wire-level validation that does not alter the generated client property type.
+    public var constraint: ApiModelPropertyConstraint?
+
     public init(
         rawName: String,
         propertyName: String,
@@ -32,6 +39,7 @@ public struct ApiModelProperty: Sendable {
         equatable: Bool = false,
         hashable: Bool = false,
         publishedAsField: Bool = true,
+        constraint: ApiModelPropertyConstraint? = nil,
     ) {
         self.rawName = rawName
         self.propertyName = propertyName
@@ -40,6 +48,7 @@ public struct ApiModelProperty: Sendable {
         self.equatable = equatable
         self.hashable = hashable
         self.publishedAsField = publishedAsField
+        self.constraint = constraint
     }
 }
 
@@ -68,6 +77,7 @@ public extension ApiModelProperty {
             equatable: equatable,
             hashable: hashable,
             publishedAsField: false,
+            constraint: constraint,
         )
     }
 }
@@ -112,6 +122,7 @@ public extension ApiModelProperty {
         required: Bool = true,
         equatable: Bool = false,
         hashable: Bool = false,
+        constraint: ApiModelPropertyConstraint? = nil,
     ) -> ApiModelProperty {
         .init(
             rawName: named,
@@ -120,6 +131,22 @@ public extension ApiModelProperty {
             required: required,
             equatable: equatable,
             hashable: hashable,
+            constraint: constraint,
+        )
+    }
+
+    static func boolLiteral(
+        _ named: String,
+        propertyName: String? = nil,
+        value: Bool,
+        required: Bool = true,
+    ) -> ApiModelProperty {
+        make(
+            named,
+            propertyName: propertyName,
+            dataType: .bool(value),
+            required: required,
+            constraint: .booleanLiteral(value),
         )
     }
 

@@ -1,6 +1,21 @@
 import Foundation
 import GeneratorBuilder
 
+/// A public, non-success response that is part of an operation's wire contract.
+///
+/// Generated clients treat these statuses as failures while retaining their raw
+/// response for application-owned error handling. Generated server and OpenAPI
+/// targets validate and describe the declared body for the matching status.
+public struct ApiPublicError: Sendable {
+    public let status: Int
+    public let response: ApiResponseBody
+
+    public init(status: Int, response: ApiResponseBody) {
+        self.status = status
+        self.response = response
+    }
+}
+
 public struct ApiOperation: Sendable {
     /// The name of the operation
     ///
@@ -25,6 +40,9 @@ public struct ApiOperation: Sendable {
     /// The acceptable status
     public let acceptableStatuses: [Int]
 
+    /// Public errors, each with its declared HTTP status and response body.
+    public let publicErrors: [ApiPublicError]
+
     /// The extra imports for this operation
     public let extraImports: [ApiImport]
 
@@ -47,6 +65,7 @@ public struct ApiOperation: Sendable {
         request: ApiRequestBody,
         response: ApiResponseBody,
         acceptableStatuses: [Int],
+        publicErrors: [ApiPublicError] = [],
         extraImports: [ApiImport],
     ) {
         self.name = name
@@ -56,6 +75,7 @@ public struct ApiOperation: Sendable {
         self.request = request
         self.response = response
         self.acceptableStatuses = acceptableStatuses
+        self.publicErrors = publicErrors
         self.extraImports = extraImports
         self.security = security
     }
@@ -79,6 +99,7 @@ public extension ApiOperation {
             request: request,
             response: response,
             acceptableStatuses: acceptableStatuses,
+            publicErrors: publicErrors,
             extraImports: extraImports,
         )
     }
@@ -113,6 +134,7 @@ public extension ApiOperation {
             request: adaptedRequest,
             response: response,
             acceptableStatuses: acceptableStatuses,
+            publicErrors: publicErrors,
             extraImports: extraImports,
         )
     }
@@ -145,6 +167,7 @@ public extension ApiOperation {
             request: request,
             response: adaptedResponse,
             acceptableStatuses: acceptableStatuses,
+            publicErrors: publicErrors,
             extraImports: extraImports,
         )
     }
@@ -164,6 +187,7 @@ public extension ApiOperation {
             request: request,
             response: response,
             acceptableStatuses: acceptableStatuses,
+            publicErrors: publicErrors,
             extraImports: extraImports,
         )
     }
@@ -181,6 +205,7 @@ public extension ApiOperation {
             request: request,
             response: response,
             acceptableStatuses: acceptableStatuses,
+            publicErrors: publicErrors,
             extraImports: extraImports + extras,
         )
     }
@@ -205,6 +230,7 @@ public extension ApiOperation {
         parameters: [ApiParameter] = [],
         response: ApiTypeSchema? = nil,
         acceptableStatuses: [Int] = [200],
+        publicErrors: [ApiPublicError] = [],
         extraImports: [ApiImport] = [],
     ) -> ApiOperation {
         .init(
@@ -216,6 +242,7 @@ public extension ApiOperation {
             request: .none,
             response: response != nil ? .json(response) : .none,
             acceptableStatuses: acceptableStatuses,
+            publicErrors: publicErrors,
             extraImports: extraImports,
         )
     }
@@ -238,6 +265,7 @@ public extension ApiOperation {
         request: ApiTypeSchema?,
         response: ApiTypeSchema? = nil,
         acceptableStatuses: [Int] = [200, 201, 204],
+        publicErrors: [ApiPublicError] = [],
         extraImports: [ApiImport] = [],
     ) -> ApiOperation {
         .init(
@@ -249,6 +277,7 @@ public extension ApiOperation {
             request: .json(request),
             response: response.map { .json($0) } ?? .none,
             acceptableStatuses: acceptableStatuses,
+            publicErrors: publicErrors,
             extraImports: extraImports,
         )
     }
@@ -271,6 +300,7 @@ public extension ApiOperation {
         requestType: ApiRequestBody = .none,
         responseType: ApiResponseBody = .none,
         acceptableStatuses: [Int] = [200, 201, 204],
+        publicErrors: [ApiPublicError] = [],
         extraImports: [ApiImport] = [],
     ) -> ApiOperation {
         .init(
@@ -282,6 +312,7 @@ public extension ApiOperation {
             request: requestType,
             response: responseType,
             acceptableStatuses: acceptableStatuses,
+            publicErrors: publicErrors,
             extraImports: extraImports,
         )
     }
@@ -304,6 +335,7 @@ public extension ApiOperation {
         multiParts: [String],
         response: ApiTypeSchema? = nil,
         acceptableStatuses: [Int] = [200, 201, 204],
+        publicErrors: [ApiPublicError] = [],
         extraImports: [ApiImport] = [],
     ) -> ApiOperation {
         .init(
@@ -315,6 +347,7 @@ public extension ApiOperation {
             request: .multiPart(multiParts),
             response: response.map { .json($0) } ?? .none,
             acceptableStatuses: acceptableStatuses,
+            publicErrors: publicErrors,
             extraImports: extraImports,
         )
     }
@@ -337,6 +370,7 @@ public extension ApiOperation {
         request: ApiTypeSchema,
         response: ApiTypeSchema? = nil,
         acceptableStatuses: [Int] = [200],
+        publicErrors: [ApiPublicError] = [],
         extraImports: [ApiImport] = [],
     ) -> ApiOperation {
         .init(
@@ -348,6 +382,7 @@ public extension ApiOperation {
             request: .json(request),
             response: response.map { .json($0) } ?? .none,
             acceptableStatuses: acceptableStatuses,
+            publicErrors: publicErrors,
             extraImports: extraImports,
         )
     }
@@ -370,6 +405,7 @@ public extension ApiOperation {
         request: ApiTypeSchema,
         response: ApiTypeSchema? = nil,
         acceptableStatuses: [Int] = [200],
+        publicErrors: [ApiPublicError] = [],
         extraImports: [ApiImport] = [],
     ) -> ApiOperation {
         .init(
@@ -381,6 +417,7 @@ public extension ApiOperation {
             request: .json(request),
             response: response.map { .json($0) } ?? .none,
             acceptableStatuses: acceptableStatuses,
+            publicErrors: publicErrors,
             extraImports: extraImports,
         )
     }
@@ -403,6 +440,7 @@ public extension ApiOperation {
         request: ApiTypeSchema? = nil,
         response: ApiTypeSchema? = nil,
         acceptableStatuses: [Int] = [200, 204, 205],
+        publicErrors: [ApiPublicError] = [],
         extraImports: [ApiImport] = [],
     ) -> ApiOperation {
         .init(
@@ -414,6 +452,7 @@ public extension ApiOperation {
             request: request == nil ? .none : .json(request),
             response: response.map { .json($0) } ?? .none,
             acceptableStatuses: acceptableStatuses,
+            publicErrors: publicErrors,
             extraImports: extraImports,
         )
     }

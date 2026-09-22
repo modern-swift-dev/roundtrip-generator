@@ -53,6 +53,46 @@ struct TypeScriptBackendGeneratorTests {
         #expect(files == (try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()))
     }
 
+    @Test func `generated backend validates and serializes each declared public error`() throws {
+        let success = ApiTypeSchema.object(typeName: "Success", properties: [.string("value")])
+        let failure = ApiTypeSchema.object(typeName: "Failure", properties: [.string("code")])
+        let operation = ApiOperation.get(
+            name: "read",
+            path: .relative("/records"),
+            security: .unsecured,
+            response: success.asRef,
+            publicErrors: [.init(status: 409, response: .json(failure.asRef))],
+        )
+
+        let files = try TypeScriptBackendApiPackageGenerator(
+            package: testPackage(operation: operation, references: [success, failure]),
+        ).generatedFiles()
+        let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+
+        #expect(routes.contains("validateGeneratedResponseStatus(output.status, [200, 409])"))
+        #expect(routes.contains("if (output.status === 409)"))
+        #expect(routes.contains("response.status(output.status).type(\"application/json\").send(responseBody);"))
+        #expect(routes.contains("Success | Failure"))
+    }
+
+    @Test func `generated backend preserves boolean literal constraints`() throws {
+        let failure = ApiTypeSchema.object(typeName: "Failure", properties: [.boolLiteral("success", value: false)])
+        let operation = ApiOperation.get(
+            name: "read",
+            path: .relative("/records"),
+            security: .unsecured,
+            response: nil,
+            publicErrors: [.init(status: 409, response: .json(failure.asRef))],
+        )
+
+        let files = try TypeScriptBackendApiPackageGenerator(
+            package: testPackage(operation: operation, references: [failure]),
+        ).generatedFiles()
+        let models = try #require(files.first { $0.relativePath == "src/generated/models.ts" }?.contents)
+
+        #expect(models.contains("\"success\": z.literal(false)"))
+    }
+
     @Test func existingProjectGenerationLeavesHostBootstrapAndPackageFilesAlone() throws {
         let user = ApiTypeSchema.object(typeName: "User", properties: [.string("name")])
         let operation = ApiOperation.post(
@@ -167,16 +207,16 @@ struct TypeScriptBackendGeneratorTests {
         }
     }
 
-    @Test func generatedBackendRejectsAbsoluteAndRuntimeOperationPaths() {
+    @Test func generatedBackendExcludesAbsoluteAndRuntimeOperationPaths() throws {
         let operations = [
             ApiOperation.get(name: "absoluteReceiptImage", path: .absolute("https://example.com/receipt.png"), security: .unsecured),
             ApiOperation.get(name: "runtimeReceiptImage", path: .runtime, security: .unsecured)
         ]
 
         for operation in operations {
-            #expect(throws: TypeScriptBackendGeneratorError.unsupportedPath(operationName: operation.name)) {
-                try TypeScriptBackendApiPackageGenerator(package: testPackage(operation: operation)).generatedFiles()
-            }
+            let files = try TypeScriptBackendApiPackageGenerator(package: testPackage(operation: operation)).generatedFiles()
+            let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+            #expect(!routes.contains(operation.name))
         }
     }
 

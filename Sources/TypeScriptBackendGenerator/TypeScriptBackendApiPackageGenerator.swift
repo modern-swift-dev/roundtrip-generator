@@ -54,14 +54,9 @@ public struct TypeScriptBackendApiPackageGenerator {
         }
         for operation in allOperations() {
             try validate(operation: operation)
-            guard case .relative = operation.path else {
-                throw TypeScriptBackendGeneratorError.unsupportedPath(operationName: operation.name)
-            }
             switch operation.request {
-                case let .json(requestType):
-                    guard requestType != nil else {
-                        throw TypeScriptBackendGeneratorError.unsupportedRequest(operationName: operation.name)
-                    }
+                case .json:
+                    break
                 case let .multiPart(parts):
                     guard !parts.isEmpty,
                           parts.allSatisfy({ !$0.isEmpty }),
@@ -74,16 +69,30 @@ public struct TypeScriptBackendApiPackageGenerator {
                     break
             }
             switch operation.response {
-                case let .json(responseType):
-                    guard responseType != nil else {
-                        throw TypeScriptBackendGeneratorError.unsupportedResponse(operationName: operation.name)
-                    }
+                case .json:
+                    break
                 case .none,
                      .binary:
                     break
             }
+            for error in operation.publicErrors {
+                guard (400 ... 599).contains(error.status) else {
+                    throw TypeScriptBackendGeneratorError.invalidPackage(reason: "operation \(operation.name) has a non-error public status")
+                }
+                switch error.response {
+                    case .json:
+                        break
+                    case .none,
+                         .binary:
+                        break
+                }
+            }
             guard !operation.acceptableStatuses.isEmpty else {
                 throw TypeScriptBackendGeneratorError.invalidPackage(reason: "operation \(operation.name) has no acceptable status")
+            }
+            let statuses = operation.acceptableStatuses + operation.publicErrors.map(\.status)
+            guard Set(statuses).count == statuses.count else {
+                throw TypeScriptBackendGeneratorError.invalidPackage(reason: "operation \(operation.name) has duplicate response statuses")
             }
         }
         try validateGeneratedTypeNames(generatedDataTypes())
@@ -310,7 +319,12 @@ public struct TypeScriptBackendApiPackageGenerator {
     }
 
     private func allOperations() -> [ApiOperation] {
-        package.modules.flatMap { $0.definitions.flatMap(\.operations) }
+        package.modules.flatMap { $0.definitions.flatMap(\.operations) }.filter {
+            if case .relative = $0.path {
+                return true
+            }
+            return false
+        }
     }
 
     private func packageJSON() -> String {
