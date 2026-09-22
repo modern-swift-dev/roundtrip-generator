@@ -35,6 +35,8 @@ struct TypeScriptBackendGeneratorTests {
 
         let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
         #expect(routes.contains("export function registerGeneratedRoutes"))
+        #expect(routes.contains("type Application"))
+        #expect(routes.contains("app: Application"))
         #expect(routes.contains("app.post(\"/users\""))
 
         let models = try #require(files.first { $0.relativePath == "src/generated/models.ts" }?.contents)

@@ -633,7 +633,7 @@ struct TypeScriptBackendRoutesEmitter {
         return """
         // Generated code. Do not edit.
 
-        import express, { type Express, type Request, type RequestHandler, type Response } from "express";
+        import express, { type Application, type Request, type RequestHandler, type Response } from "express";
         import { z } from "zod";
         import {
             \(runtimeImports)
@@ -762,7 +762,7 @@ struct TypeScriptBackendRoutesEmitter {
         \(fields.prepad())
         }
 
-        export function registerGeneratedRoutes<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}>(app: Express, handlers: GeneratedHandlers<Bindings, Integration, Multipart>, bindings?: Bindings, options?: GeneratedRouteOptions<Integration, Multipart>): void {
+        export function registerGeneratedRoutes<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}>(app: Application, handlers: GeneratedHandlers<Bindings, Integration, Multipart>, bindings?: Bindings, options?: GeneratedRouteOptions<Integration, Multipart>): void {
         \(routes.prepad())
         }
         """
