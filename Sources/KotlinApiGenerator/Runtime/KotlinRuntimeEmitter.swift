@@ -342,6 +342,7 @@ struct KotlinRuntimeEmitter {
 
         data class MultipartBody(
             val parts: Map<String, Part> = emptyMap(),
+            val additionalParts: List<Pair<String, Part>> = emptyList(),
         ) {
             data class Part(
                 val fileName: String? = null,
@@ -585,7 +586,7 @@ struct KotlinRuntimeEmitter {
                         setBody(
                             MultiPartFormDataContent(
                                 formData {
-                                    body.parts.forEach { (name, value) ->
+                                    (body.parts.toList() + body.additionalParts).forEach { (name, value) ->
                                         val partHeaders =
                                             Headers.build {
                                                 append(

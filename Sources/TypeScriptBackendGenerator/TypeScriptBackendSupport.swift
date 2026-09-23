@@ -210,6 +210,7 @@ extension ApiOperation {
     var backendDataTypes: [ApiTypeSchema] {
         [request.dataType, response.dataType]
             .compactMap(\.self)
+            + successResponses.compactMap(\.response.dataType)
             + publicErrors.compactMap(\.response.dataType)
             + expandedParameters.compactMap(\.dataType.backendDataType)
     }

@@ -80,6 +80,7 @@ struct TypeScriptBackendOperationEmitter {
 
     var requiresOutputSchemaBinding: Bool {
         operation.response.dataType?.containsBackendCustomizableType == true
+            || operation.successResponses.contains { $0.response.dataType?.containsBackendCustomizableType == true }
     }
 
     func schemaBindingValidation() -> String {
@@ -193,7 +194,7 @@ struct TypeScriptBackendOperationEmitter {
     }
 
     private func handlerResponseType() -> String {
-        ([operation.response] + operation.publicErrors.map(\.response))
+        ([operation.response] + operation.successResponses.map(\.response) + operation.publicErrors.map(\.response))
             .map(handlerResponseType(for:))
             .uniqued()
             .joined(separator: " | ")
@@ -262,16 +263,34 @@ struct TypeScriptBackendOperationEmitter {
             }
             """
         }.joined(separator: "\n")
-        return publicErrorHandling + responseHandling(for: operation.response, usesOutputBinding: true)
+        let successHandling = operation.successResponses.map { success in
+            """
+            if (output.status === \(success.status)) {
+            \(responseHandling(for: success.response, usesOutputBinding: true, requiredHeaders: success.requiredHeaders).prepad(4))
+                return;
+            }
+            """
+        }.joined(separator: "\n")
+        return [publicErrorHandling, successHandling, responseHandling(for: operation.response, usesOutputBinding: true)]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
     }
 
-    private func responseHandling(for response: ApiResponseBody, usesOutputBinding: Bool) -> String {
+    private func responseHandling(for response: ApiResponseBody, usesOutputBinding: Bool, requiredHeaders: [String] = []) -> String {
+        let requiredHeadersValidation = requiredHeaders.map { name in
+            """
+            if (!Object.entries(output.headers).some(([headerName, value]) => headerName.toLowerCase() === \(name.lowercased().backendStringLiteral) && typeof value === "string" && value.length > 0)) {
+                throw new Error(\("Missing required response header: \(name)".backendStringLiteral));
+            }
+            """
+        }.joined(separator: "\n")
         switch response {
             case .none:
                 return """
                 if (output.value !== undefined) {
                     throw new Error("Bodyless response cannot include a response value");
                 }
+                \(requiredHeadersValidation)
                 \(responseHeadersSource())
                 response.status(output.status).end();
                 """
@@ -280,6 +299,7 @@ struct TypeScriptBackendOperationEmitter {
                 if (!(output.value instanceof Uint8Array)) {
                     throw new Error("Invalid raw response body");
                 }
+                \(requiredHeadersValidation)
                 \(responseHeadersSource())
                 if (!generatedResponseHasBody(output.status)) {
                     response.status(output.status).end();
@@ -290,7 +310,7 @@ struct TypeScriptBackendOperationEmitter {
                 """
             case let .json(dataType):
                 guard let dataType else {
-                    return "response.status(output.status).end();"
+                    return "\(requiredHeadersValidation)\n\(responseHeadersSource())\nresponse.status(output.status).end();"
                 }
                 let responseEncoder = models.encodeRootExpression(for: dataType, value: usesOutputBinding ? "publicOutput" : "publicErrorOutput")
                 if !usesOutputBinding {
@@ -299,6 +319,7 @@ struct TypeScriptBackendOperationEmitter {
                     const publicErrorOutput = output.value as \(responseType);
                     const body = \(responseEncoder);
                     const responseBody = stringifyJsonResponse(body);
+                    \(requiredHeadersValidation)
                     \(responseHeadersSource())
                     response.status(output.status).type("application/json").send(responseBody);
                     """
@@ -314,6 +335,7 @@ struct TypeScriptBackendOperationEmitter {
                 }
                 const body = \(responseEncoder);
                 const responseBody = stringifyJsonResponse(body);
+                \(requiredHeadersValidation)
                 \(responseHeadersSource())
                 if (!generatedResponseHasBody(output.status)) {
                     response.status(output.status).end();

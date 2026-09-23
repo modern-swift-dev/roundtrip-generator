@@ -143,6 +143,57 @@ import Testing
         #expect(yaml.contains("- {}"))
     }
 
+    @Test func `generated yaml declares image body only for 200 and Location only for bodyless 302`() throws {
+        let operation = ApiOperation(
+            name: "receipt",
+            method: .get,
+            path: .relative("/receipts/{id}"),
+            security: .unsecured,
+            parameters: [.path("id", .string())],
+            request: .none,
+            response: .binary(mimeType: "image/png"),
+            acceptableStatuses: [200, 302],
+            extraImports: [],
+        ).withSuccessResponse(status: 302, response: .none, requiredHeaders: ["Location"])
+        let package = ApiPackage(
+            name: "Receipts",
+            targetDirUrl: URL(fileURLWithPath: "/unused"),
+            modules: [ApiModule(name: "Files", definitions: [ApiService(name: "Receipts", operations: [operation])])],
+        )
+
+        let yaml = try OpenApiYamlPackageGenerator(package: package).generatedFile().contents
+        let response200 = try #require(yaml.components(separatedBy: "\"200\":").dropFirst().first?.components(separatedBy: "\"302\":").first)
+        let response302 = try #require(yaml.components(separatedBy: "\"302\":").dropFirst().first)
+        #expect(response200.contains("image/png"))
+        #expect(!response302.contains("image/png"))
+        #expect(!response302.contains("content:"))
+        #expect(response302.contains("headers:"))
+        #expect(response302.contains("Location:"))
+        #expect(response302.contains("required: true"))
+    }
+
+    @Test func `generated yaml declares repeatable receipts while leaving single multipart parts binary`() throws {
+        let operation = ApiOperation.postMultipart(
+            name: "upload",
+            path: .relative("/receipts"),
+            security: .unsecured,
+            multiParts: ["receipts", "metadata"],
+        ).withRepeatedMultipartParts(["receipts"])
+        let package = ApiPackage(
+            name: "Receipts",
+            targetDirUrl: URL(fileURLWithPath: "/unused"),
+            modules: [ApiModule(name: "Files", definitions: [ApiService(name: "Receipts", operations: [operation])])],
+        )
+
+        let yaml = try OpenApiYamlPackageGenerator(package: package).generatedFile().contents
+        let receipts = try #require(yaml.components(separatedBy: "receipts:\n").dropFirst().first?.components(separatedBy: "metadata:\n").first)
+        #expect(receipts.contains("type: \"array\""))
+        #expect(receipts.contains("items:"))
+        #expect(receipts.contains("format: \"binary\""))
+        let metadata = try #require(yaml.components(separatedBy: "metadata:\n").dropFirst().first)
+        #expect(metadata.contains("type: \"string\""))
+    }
+
     @Test func `generated yaml documents declared public errors and excludes client only paths`() throws {
         let success = ApiTypeSchema.object(typeName: "Success", properties: [.string("value")])
         let failure = ApiTypeSchema.object(typeName: "Failure", properties: [.string("code")])

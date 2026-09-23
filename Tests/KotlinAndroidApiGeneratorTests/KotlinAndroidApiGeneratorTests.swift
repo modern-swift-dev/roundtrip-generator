@@ -847,6 +847,27 @@ import Testing
         }
     }
 
+    @Test func `multipart requests append repeated same-name parts in OkHttp`() throws {
+        let operation = ApiOperation.postMultipart(
+            name: "uploadReceipts",
+            path: .relative("/receipts"),
+            security: .unsecured,
+            multiParts: ["receipts"],
+        )
+        let files = try KotlinAndroidApiPackageGenerator(package: testPackage(operations: [operation], references: [])).generatedFiles()
+        let operationFile = try #require(files.first {
+            $0.relativePath == "generated-api/src/main/kotlin/com/example/api/admin/users/UploadReceiptsOperation.kt"
+        })
+        let runtime = try #require(files.first {
+            $0.relativePath == "generated-api/src/main/kotlin/com/example/api/ApiRuntime.kt"
+        })
+
+        #expect(operationFile.contents.contains("fun appendReceipts(part: MultipartBody.Part): Request"))
+        #expect(operationFile.contents.contains("additionalParts = body.additionalParts + (\"receipts\" to part)"))
+        #expect(runtime.contents.contains("val parts: Map<String, Part> = emptyMap()"))
+        #expect(runtime.contents.contains("body.parts.toList() + body.additionalParts"))
+    }
+
     @Test func `multipart part list must not be empty`() {
         let operation = ApiOperation.postMultipart(
             name: "upload",

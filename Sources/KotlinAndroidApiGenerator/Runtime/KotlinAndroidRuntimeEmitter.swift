@@ -360,6 +360,7 @@ struct KotlinAndroidRuntimeEmitter {
 
         data class MultipartBody(
             val parts: Map<String, Part> = emptyMap(),
+            val additionalParts: List<Pair<String, Part>> = emptyList(),
         ) {
             data class Part(
                 val fileName: String? = null,
@@ -673,7 +674,7 @@ struct KotlinAndroidRuntimeEmitter {
                     is ApiUploadSource -> UploadRequestBody(body, contentType, uploads)
                     is ApiFileContent -> UploadRequestBody(body.source, body.contentType.toMediaType(), uploads)
                     is MultipartBody -> okhttp3.MultipartBody.Builder().setType(okhttp3.MultipartBody.FORM).apply {
-                        body.parts.forEach { (name, part) ->
+                        (body.parts.toList() + body.additionalParts).forEach { (name, part) ->
                             addFormDataPart(name, part.fileName, UploadRequestBody(part.source, (part.contentType ?: "application/octet-stream").toMediaType(), uploads))
                         }
                     }.build()

@@ -185,6 +185,48 @@ struct TypeScriptBackendGeneratorTests {
         #expect(routes.contains("response.status(output.status).end()"))
     }
 
+    @Test func `generated backend distinguishes binary success from bodyless redirect`() throws {
+        let operation = ApiOperation(
+            name: "receipt",
+            method: .get,
+            path: .relative("/receipts/{id}"),
+            security: .unsecured,
+            parameters: [.path("id", .string())],
+            request: .none,
+            response: .binary(mimeType: "image/png"),
+            acceptableStatuses: [200, 302],
+            extraImports: [],
+        )
+        .withSuccessResponse(status: 302, response: .none, requiredHeaders: ["Location"])
+        let files = try TypeScriptBackendApiPackageGenerator(package: testPackage(operation: operation, references: [])).generatedFiles()
+        let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+
+        #expect(routes.contains("if (output.status === 302)"))
+        #expect(routes.contains("Bodyless response cannot include a response value"))
+        #expect(routes.contains("Missing required response header: Location"))
+        #expect(routes.contains("response.status(output.status).end();"))
+        #expect(routes.contains("response.status(output.status).type(contentType).send(output.value);"))
+        #expect(routes.contains("Uint8Array | void"))
+    }
+
+    @Test func `generated backend rejects success overrides outside declared statuses`() {
+        let operation = ApiOperation(
+            name: "receipt",
+            method: .get,
+            path: .relative("/receipt"),
+            security: .unsecured,
+            parameters: [],
+            request: .none,
+            response: .binary(mimeType: "image/png"),
+            acceptableStatuses: [200],
+            extraImports: [],
+        ).withSuccessResponse(status: 302, response: .none, requiredHeaders: ["Location"])
+
+        #expect(throws: TypeScriptBackendGeneratorError.invalidPackage(reason: "operation receipt has invalid success response override")) {
+            try TypeScriptBackendApiPackageGenerator(package: testPackage(operation: operation, references: [])).generatedFiles()
+        }
+    }
+
     @Test func generatedBackendExposesApplicationOwnedMultipartAdapters() throws {
         let receipt = ApiTypeSchema.object(typeName: "Receipt", properties: [.string("id")])
         let operation = ApiOperation.postMultipart(

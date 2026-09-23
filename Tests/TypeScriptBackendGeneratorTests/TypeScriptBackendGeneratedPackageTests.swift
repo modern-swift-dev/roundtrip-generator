@@ -319,10 +319,21 @@ struct TypeScriptBackendGeneratedPackageTests {
             responseType: .binary(mimeType: "application/octet-stream"),
             acceptableStatuses: [200],
         )
+        let receipt = ApiOperation(
+            name: "receipt",
+            method: .get,
+            path: .relative("/receipts/{id}"),
+            security: .unsecured,
+            parameters: [.path("id", .string())],
+            request: .none,
+            response: .binary(mimeType: "image/png"),
+            acceptableStatuses: [200, 302],
+            extraImports: [],
+        ).withSuccessResponse(status: 302, response: .none, requiredHeaders: ["Location"])
         let package = ApiPackage(
             name: "RawExample",
             targetDirUrl: root,
-            modules: [ApiModule(name: "Files", definitions: [ApiService(name: "Transport", operations: [upload, fileUpload, health])])],
+            modules: [ApiModule(name: "Files", definitions: [ApiService(name: "Transport", operations: [upload, fileUpload, health, receipt])])],
         )
 
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -687,7 +698,35 @@ struct TypeScriptBackendGeneratedPackageTests {
             filesTransportHealth: async () => generatedResponse(undefined, {
                 status: 204,
                 headers: { "x-health": "ok" }
-            })
+            }),
+            filesTransportReceipt: async (input) => {
+                if (input.id === "signed") {
+                    return generatedResponse(undefined, {
+                        status: 302,
+                        headers: { Location: "https://example.com/signed-receipt" }
+                    });
+                }
+                if (input.id === "missing-location") {
+                    return generatedResponse(undefined, { status: 302 });
+                }
+                if (input.id === "invalid-body") {
+                    return generatedResponse(new Uint8Array([9]), {
+                        status: 302,
+                        headers: { Location: "https://example.com/signed-receipt" }
+                    });
+                }
+                return generatedResponse(new Uint8Array([137, 80, 78, 71]), {
+                    status: 200,
+                    headers: {
+                        "Content-Type": "image/heic",
+                        "Content-Disposition": "inline; filename=receipt.heic",
+                        Vary: "Authorization",
+                        "Cache-Control": "private, no-store",
+                        Pragma: "no-cache",
+                        Expires: "0"
+                    }
+                });
+            }
         };
         registerGeneratedRoutes(app, handlers);
         app.use((error, _request, response, _next) => {
@@ -723,6 +762,26 @@ struct TypeScriptBackendGeneratedPackageTests {
             assert.equal(health.status, 204);
             assert.equal(health.headers.get("x-health"), "ok");
             assert.equal(await health.text(), "");
+
+            const image = await fetch(`http://127.0.0.1:${address.port}/receipts/image`);
+            assert.equal(image.status, 200);
+            assert.equal(image.headers.get("content-type"), "image/heic");
+            assert.equal(image.headers.get("content-disposition"), "inline; filename=receipt.heic");
+            assert.equal(image.headers.get("vary"), "Authorization");
+            assert.equal(image.headers.get("cache-control"), "private, no-store");
+            assert.equal(image.headers.get("pragma"), "no-cache");
+            assert.equal(image.headers.get("expires"), "0");
+            assert.deepEqual(new Uint8Array(await image.arrayBuffer()), new Uint8Array([137, 80, 78, 71]));
+
+            const redirect = await fetch(`http://127.0.0.1:${address.port}/receipts/signed`, { redirect: "manual" });
+            assert.equal(redirect.status, 302);
+            assert.equal(redirect.headers.get("location"), "https://example.com/signed-receipt");
+            assert.equal(await redirect.text(), "");
+
+            const missingLocation = await fetch(`http://127.0.0.1:${address.port}/receipts/missing-location`, { redirect: "manual" });
+            assert.equal(missingLocation.status, 500);
+            const invalidBody = await fetch(`http://127.0.0.1:${address.port}/receipts/invalid-body`, { redirect: "manual" });
+            assert.equal(invalidBody.status, 500);
         } finally {
             await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
         }
@@ -1135,7 +1194,7 @@ struct TypeScriptBackendGeneratedPackageTests {
                 const captions = input.body.parts.get("caption") ?? [];
                 return {
                     filename: `${context.identity}:${file.filename}`,
-                    size: file.bytes.length,
+                    size: input.body.required.file.reduce((total, part) => total + part.bytes.length, 0),
                     metadata: new TextDecoder().decode(metadata.bytes),
                     additional: captions.map((part) => new TextDecoder().decode(part.bytes)).join(","),
                     repeatCount: captions.length
@@ -1177,6 +1236,7 @@ struct TypeScriptBackendGeneratedPackageTests {
             order.length = 0;
             const form = new FormData();
             form.append("file", new Blob([new Uint8Array([0, 255, 1])], { type: "image/png" }), "avatar.png");
+            form.append("file", new Blob([new Uint8Array([2, 3])], { type: "image/png" }), "second.png");
             form.append("metadata", new Blob(["profile-metadata"], { type: "application/json" }));
             form.append("caption", "first");
             form.append("caption", "second");
@@ -1188,7 +1248,7 @@ struct TypeScriptBackendGeneratedPackageTests {
             assert.equal(uploaded.status, 200);
             assert.deepEqual(await uploaded.json(), {
                 filename: "user-1:avatar.png",
-                size: 3,
+                size: 5,
                 metadata: "profile-metadata",
                 additional: "first,second",
                 repeat_count: 2

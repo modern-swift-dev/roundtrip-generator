@@ -16,6 +16,19 @@ public struct ApiPublicError: Sendable {
     }
 }
 
+/// A successful status whose body or required headers differ from the operation default.
+public struct ApiSuccessResponse: Sendable {
+    public let status: Int
+    public let response: ApiResponseBody
+    public let requiredHeaders: [String]
+
+    public init(status: Int, response: ApiResponseBody, requiredHeaders: [String] = []) {
+        self.status = status
+        self.response = response
+        self.requiredHeaders = requiredHeaders
+    }
+}
+
 public struct ApiOperation: Sendable {
     /// The name of the operation
     ///
@@ -34,11 +47,17 @@ public struct ApiOperation: Sendable {
     /// The request type
     public let request: ApiRequestBody
 
+    /// Multipart names represented as arrays of files in generated API descriptions.
+    public let repeatedMultipartParts: Set<String>
+
     /// The response type
     public let response: ApiResponseBody
 
     /// The acceptable status
     public let acceptableStatuses: [Int]
+
+    /// Status-specific overrides for successful response bodies and required headers.
+    public let successResponses: [ApiSuccessResponse]
 
     /// Public errors, each with its declared HTTP status and response body.
     public let publicErrors: [ApiPublicError]
@@ -63,8 +82,10 @@ public struct ApiOperation: Sendable {
         security: ApiAuthorizationHeaderPolicy,
         parameters: [ApiParameter],
         request: ApiRequestBody,
+        repeatedMultipartParts: Set<String> = [],
         response: ApiResponseBody,
         acceptableStatuses: [Int],
+        successResponses: [ApiSuccessResponse] = [],
         publicErrors: [ApiPublicError] = [],
         extraImports: [ApiImport],
     ) {
@@ -73,8 +94,10 @@ public struct ApiOperation: Sendable {
         self.path = path
         self.parameters = parameters
         self.request = request
+        self.repeatedMultipartParts = repeatedMultipartParts
         self.response = response
         self.acceptableStatuses = acceptableStatuses
+        self.successResponses = successResponses
         self.publicErrors = publicErrors
         self.extraImports = extraImports
         self.security = security
@@ -97,8 +120,10 @@ public extension ApiOperation {
             security: security,
             parameters: self.parameters + parameters,
             request: request,
+            repeatedMultipartParts: repeatedMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
+            successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
         )
@@ -132,8 +157,10 @@ public extension ApiOperation {
             security: security,
             parameters: parameters,
             request: adaptedRequest,
+            repeatedMultipartParts: repeatedMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
+            successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
         )
@@ -165,8 +192,10 @@ public extension ApiOperation {
             security: security,
             parameters: parameters,
             request: request,
+            repeatedMultipartParts: repeatedMultipartParts,
             response: adaptedResponse,
             acceptableStatuses: acceptableStatuses,
+            successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
         )
@@ -185,8 +214,10 @@ public extension ApiOperation {
             security: security,
             parameters: parameters,
             request: request,
+            repeatedMultipartParts: repeatedMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
+            successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
         )
@@ -203,10 +234,48 @@ public extension ApiOperation {
             security: security,
             parameters: parameters,
             request: request,
+            repeatedMultipartParts: repeatedMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
+            successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports + extras,
+        )
+    }
+
+    /// Returns a copy with a status-specific successful response contract.
+    func withSuccessResponse(status: Int, response: ApiResponseBody, requiredHeaders: [String] = []) -> ApiOperation {
+        .init(
+            name: name,
+            method: method,
+            path: path,
+            security: security,
+            parameters: parameters,
+            request: request,
+            repeatedMultipartParts: repeatedMultipartParts,
+            response: self.response,
+            acceptableStatuses: acceptableStatuses,
+            successResponses: successResponses + [.init(status: status, response: response, requiredHeaders: requiredHeaders)],
+            publicErrors: publicErrors,
+            extraImports: extraImports,
+        )
+    }
+
+    /// Marks declared multipart names that may occur more than once on the wire.
+    func withRepeatedMultipartParts(_ names: Set<String>) -> ApiOperation {
+        .init(
+            name: name,
+            method: method,
+            path: path,
+            security: security,
+            parameters: parameters,
+            request: request,
+            repeatedMultipartParts: names,
+            response: response,
+            acceptableStatuses: acceptableStatuses,
+            successResponses: successResponses,
+            publicErrors: publicErrors,
+            extraImports: extraImports,
         )
     }
 }

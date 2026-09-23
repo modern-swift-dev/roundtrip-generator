@@ -1199,6 +1199,25 @@ import Testing
         #expect(!output.contains("MultipartBodyConvertible, Equatable"))
     }
 
+    @Test func `multipart requests can append repeated parts without replacing the first part`() {
+        let operation = ApiOperation.postMultipart(
+            name: "uploadReceipts",
+            path: .relative("/receipts"),
+            security: .unsecured,
+            multiParts: ["receipts"],
+        )
+
+        let output = ApiOperationGenerator(operation: operation)
+            .swiftCode(parentClassName: "", imports: [])
+            .toString()
+
+        #expect(output.contains("public mutating func appendBodyPartReceipts(part: MultipartBody.Part)"))
+        #expect(output.contains("public private(set) var body: [String: MultipartBody.Part] = [:]"))
+        #expect(output.contains("additionalBodyParts.append((\"receipts\", part))"))
+        #expect(output.contains("for (name, part) in additionalBodyParts"))
+        #expect(output.contains("builder.addPart(name: name, part: part)"))
+    }
+
     @Test func `swift request accessors avoid parameter local shadowing`() {
         let operation = ApiOperation.postMultipart(
             name: "upload",

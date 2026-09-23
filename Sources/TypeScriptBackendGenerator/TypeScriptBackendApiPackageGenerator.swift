@@ -75,6 +75,15 @@ public struct TypeScriptBackendApiPackageGenerator {
                      .binary:
                     break
             }
+            let successStatuses = operation.successResponses.map(\.status)
+            guard Set(successStatuses).count == successStatuses.count,
+                  successStatuses.allSatisfy(operation.acceptableStatuses.contains),
+                  operation.successResponses.allSatisfy({ success in
+                      !success.requiredHeaders.contains(where: \.isEmpty)
+                          && Set(success.requiredHeaders.map { $0.lowercased() }).count == success.requiredHeaders.count
+                  }) else {
+                throw TypeScriptBackendGeneratorError.invalidPackage(reason: "operation \(operation.name) has invalid success response override")
+            }
             for error in operation.publicErrors {
                 guard (400 ... 599).contains(error.status) else {
                     throw TypeScriptBackendGeneratorError.invalidPackage(reason: "operation \(operation.name) has a non-error public status")

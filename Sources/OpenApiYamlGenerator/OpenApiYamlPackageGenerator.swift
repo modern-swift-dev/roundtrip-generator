@@ -150,13 +150,26 @@ public struct OpenApiYamlPackageGenerator {
             }
         }
 
-        renderRequestBody(operation.request, &yaml, context: context)
+        renderRequestBody(operation.request, repeatedMultipartParts: operation.repeatedMultipartParts, &yaml, context: context)
         yaml.map("responses") {
             for status in operation.acceptableStatuses.sorted() {
                 yaml.map(OpenApiYamlWriter.quotedKey("\(status)")) {
                     yaml.scalar("description", HTTPURLResponse.localizedString(forStatusCode: status).capitalized)
+                    let success = operation.successResponses.first { $0.status == status }
+                    if let success, !success.requiredHeaders.isEmpty {
+                        yaml.map("headers") {
+                            for header in success.requiredHeaders {
+                                yaml.map(OpenApiYamlWriter.quotedKey(header)) {
+                                    yaml.scalar("required", true)
+                                    yaml.map("schema") {
+                                        yaml.scalar("type", "string")
+                                    }
+                                }
+                            }
+                        }
+                    }
                     if status.canCarryResponseBody {
-                        renderResponseContent(operation.response, &yaml, context: context)
+                        renderResponseContent(success?.response ?? operation.response, &yaml, context: context)
                     }
                 }
             }
@@ -180,7 +193,12 @@ public struct OpenApiYamlPackageGenerator {
         }
     }
 
-    private func renderRequestBody(_ request: ApiRequestBody, _ yaml: inout OpenApiYamlWriter, context: OpenApiYamlRenderContext) {
+    private func renderRequestBody(
+        _ request: ApiRequestBody,
+        repeatedMultipartParts: Set<String>,
+        _ yaml: inout OpenApiYamlWriter,
+        context: OpenApiYamlRenderContext,
+    ) {
         switch request {
             case .none:
                 return
@@ -218,8 +236,16 @@ public struct OpenApiYamlPackageGenerator {
                                 yaml.map("properties") {
                                     for part in parts {
                                         yaml.map(OpenApiYamlWriter.quotedKey(part)) {
-                                            yaml.scalar("type", "string")
-                                            yaml.scalar("format", "binary")
+                                            if repeatedMultipartParts.contains(part) {
+                                                yaml.scalar("type", "array")
+                                                yaml.map("items") {
+                                                    yaml.scalar("type", "string")
+                                                    yaml.scalar("format", "binary")
+                                                }
+                                            } else {
+                                                yaml.scalar("type", "string")
+                                                yaml.scalar("format", "binary")
+                                            }
                                         }
                                     }
                                 }
@@ -666,6 +692,11 @@ public struct OpenApiYamlPackageGenerator {
                     }
                     if let responseType = operation.response.dataType {
                         context.registerUsed(type: responseType)
+                    }
+                    for success in operation.successResponses {
+                        if let responseType = success.response.dataType {
+                            context.registerUsed(type: responseType)
+                        }
                     }
                     for error in operation.publicErrors {
                         if let responseType = error.response.dataType {

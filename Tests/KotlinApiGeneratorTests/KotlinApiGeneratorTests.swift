@@ -1502,9 +1502,30 @@ import Testing
         })
 
         #expect(operationFile.contents.contains("val body: MultipartBody = MultipartBody()"))
-        #expect(operationFile.contents.contains("copy(body = body.copy(parts = body.parts + (\"file\" to part)))"))
+        #expect(operationFile.contents.contains("copy(body = body.copy(parts = body.parts + (\"file\" to part)"))
         #expect(!operationFile.contents.contains("Map<String, MultipartBody.Part>"))
         #expect(runtime.contents.contains("val parts: Map<String, Part> = emptyMap()"))
+    }
+
+    @Test func `multipart requests append repeated same-name parts in Ktor`() throws {
+        let operation = ApiOperation.postMultipart(
+            name: "uploadReceipts",
+            path: .relative("/receipts"),
+            security: .unsecured,
+            multiParts: ["receipts"],
+        )
+        let files = try KotlinApiPackageGenerator(package: testPackage(operations: [operation], references: [])).generatedFiles()
+        let operationFile = try #require(files.first {
+            $0.relativePath == "generated-api/src/commonMain/kotlin/com/example/api/admin/users/UploadReceiptsOperation.kt"
+        })
+        let runtime = try #require(files.first {
+            $0.relativePath == "generated-api/src/commonMain/kotlin/com/example/api/ApiRuntime.kt"
+        })
+
+        #expect(operationFile.contents.contains("fun appendReceipts(part: MultipartBody.Part): Request"))
+        #expect(operationFile.contents.contains("additionalParts = body.additionalParts + (\"receipts\" to part)"))
+        #expect(runtime.contents.contains("val parts: Map<String, Part> = emptyMap()"))
+        #expect(runtime.contents.contains("body.parts.toList() + body.additionalParts"))
     }
 
     @Test func `json map request bodies do not use multipart runtime branch`() throws {

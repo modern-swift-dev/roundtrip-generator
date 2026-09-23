@@ -365,7 +365,11 @@ struct KotlinOperationEmitter {
             Block {
                 "fun with\(part.capitalCased)(part: MultipartBody.Part): Request ="
                 Indentation {
-                    "copy(body = body.copy(parts = body.parts + (\(part.kotlinStringLiteral) to part)))"
+                    "copy(body = body.copy(parts = body.parts + (\(part.kotlinStringLiteral) to part), additionalParts = body.additionalParts.filterNot { it.first == \(part.kotlinStringLiteral) }))"
+                }
+                "fun append\(part.capitalCased)(part: MultipartBody.Part): Request ="
+                Indentation {
+                    "if (body.parts.containsKey(\(part.kotlinStringLiteral))) copy(body = body.copy(additionalParts = body.additionalParts + (\(part.kotlinStringLiteral) to part))) else with\(part.capitalCased)(part)"
                 }
             }
             .toString() as any Node

@@ -141,6 +141,11 @@ struct ApiOperationGenerator {
                         try VariableDeclSyntax("public private(set) var body: [String: MultipartBody.Part] = [:]")
                     },
                 )
+                let additionalPartsDeclaration = DeclSyntax(
+                    SwiftGeneratedSyntax.parse("operation \(operation.typeName).Request repeated multipart parts") {
+                        try VariableDeclSyntax("private var additionalBodyParts: [(String, MultipartBody.Part)] = []")
+                    },
+                )
                 let setterDeclarations = parts.map { part in
                     DeclSyntax(
                         SwiftGeneratedSyntax.parse("operation \(operation.typeName).Request multipart setter") {
@@ -148,13 +153,22 @@ struct ApiOperationGenerator {
                                 """
                                 public mutating func setBodyPart\(raw: part.capitalCased)(part: MultipartBody.Part) {
                                     body[\(raw: part.debugDescription)] = part
+                                    additionalBodyParts.removeAll { $0.0 == \(raw: part.debugDescription) }
+                                }
+
+                                public mutating func appendBodyPart\(raw: part.capitalCased)(part: MultipartBody.Part) {
+                                    if body[\(raw: part.debugDescription)] == nil {
+                                        body[\(raw: part.debugDescription)] = part
+                                    } else {
+                                        additionalBodyParts.append((\(raw: part.debugDescription), part))
+                                    }
                                 }
                                 """,
                             )
                         },
                     )
                 }
-                return [bodyDeclaration] + setterDeclarations
+                return [bodyDeclaration, additionalPartsDeclaration] + setterDeclarations
             case let .json(type):
                 guard let type else {
                     return []
@@ -580,6 +594,9 @@ struct ApiOperationGenerator {
                     guard let builder = try MultipartBody.Builder() else { throw ApiError.requestEncodingFailed }
                 \(raw: multipartRequiredPartsSource())
                     for (name, part) in body {
+                        builder.addPart(name: name, part: part)
+                    }
+                    for (name, part) in additionalBodyParts {
                         builder.addPart(name: name, part: part)
                     }
                     return try builder.build()
