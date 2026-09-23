@@ -20,10 +20,17 @@ extension ApiModelProperty {
         } else {
             []
         }
-        let serializerAnnotations = dataType.usesDirectKotlinAndroidByteArraySerializer
-            ? ["@Serializable(with = ByteArrayBase64Serializer::class)"]
-            : []
+        let serializerAnnotations: [String] = if dataType.usesDirectKotlinAndroidByteArraySerializer {
+            ["@Serializable(with = ByteArrayBase64Serializer::class)"]
+        } else if let serializer = dataType.kotlinAndroidStrictIntegerSerializerName {
+            ["@Serializable(with = \(serializer)::class)"]
+        } else {
+            []
+        }
         var imports: Set<String> = needsSerialName ? ["kotlinx.serialization.SerialName"] : []
+        if let serializer = dataType.kotlinAndroidStrictIntegerSerializerName {
+            imports.insert("\(options.basePackage).\(serializer)")
+        }
         if dataType.isKotlinAndroidPatchableValue || !requiredBooleanAnnotations.isEmpty {
             imports.insert("kotlinx.serialization.EncodeDefault")
         }
@@ -36,5 +43,21 @@ extension ApiModelProperty {
             annotations: annotations + patchableAnnotations + requiredBooleanAnnotations + serializerAnnotations,
             additionalImports: imports,
         )
+    }
+}
+
+private extension ApiTypeSchema {
+    var kotlinAndroidStrictIntegerSerializerName: String? {
+        switch self {
+            case .int,
+                 .int32:
+                "StrictIntSerializer"
+            case .int64:
+                "StrictLongSerializer"
+            case let .reference(_, _, _, _, dataType):
+                dataType?.kotlinAndroidStrictIntegerSerializerName
+            default:
+                nil
+        }
     }
 }

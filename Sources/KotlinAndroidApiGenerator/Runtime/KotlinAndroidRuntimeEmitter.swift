@@ -53,7 +53,10 @@ struct KotlinAndroidRuntimeEmitter {
                 "kotlinx.datetime.LocalTime",
                 "kotlinx.serialization.json.Json",
                 "kotlinx.serialization.json.JsonDecoder",
-                "kotlinx.serialization.json.JsonEncoder"
+                "kotlinx.serialization.json.JsonEncoder",
+                "kotlinx.serialization.json.JsonPrimitive",
+                "kotlinx.serialization.json.int",
+                "kotlinx.serialization.json.long"
             ],
             body: runtimeDeclaration,
         )
@@ -319,6 +322,38 @@ struct KotlinAndroidRuntimeEmitter {
 
             override fun serialize(encoder: Encoder, value: ByteArray) {
                 encoder.encodeString(Base64.Default.encode(value))
+            }
+        }
+
+        object StrictIntSerializer : KSerializer<Int> {
+            override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("StrictInt", PrimitiveKind.INT)
+
+            override fun deserialize(decoder: Decoder): Int {
+                val jsonDecoder = decoder as? JsonDecoder ?: return decoder.decodeInt()
+                val primitive = jsonDecoder.decodeJsonElement() as? JsonPrimitive
+                    ?: throw SerializationException("Expected a JSON integer")
+                if (primitive.isString) throw SerializationException("Expected a JSON integer")
+                return primitive.int
+            }
+
+            override fun serialize(encoder: Encoder, value: Int) {
+                encoder.encodeInt(value)
+            }
+        }
+
+        object StrictLongSerializer : KSerializer<Long> {
+            override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("StrictLong", PrimitiveKind.LONG)
+
+            override fun deserialize(decoder: Decoder): Long {
+                val jsonDecoder = decoder as? JsonDecoder ?: return decoder.decodeLong()
+                val primitive = jsonDecoder.decodeJsonElement() as? JsonPrimitive
+                    ?: throw SerializationException("Expected a JSON integer")
+                if (primitive.isString) throw SerializationException("Expected a JSON integer")
+                return primitive.long
+            }
+
+            override fun serialize(encoder: Encoder, value: Long) {
+                encoder.encodeLong(value)
             }
         }
 

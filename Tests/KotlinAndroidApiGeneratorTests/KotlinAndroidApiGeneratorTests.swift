@@ -5,6 +5,31 @@ import GeneratorModels
 import Testing
 
 @Suite(.serialized) struct KotlinAndroidApiGeneratorTests {
+    @Test func `integer fields reject quoted JSON numbers through strict serializers`() throws {
+        let navigation = ApiTypeSchema.object(typeName: "Navigation", properties: [
+            .int("requestId").optional,
+            .int32("count"),
+            .int64("wideId").optional,
+            .string("label")
+        ])
+        let files = try KotlinAndroidApiPackageGenerator(
+            package: testPackage(response: navigation.asRef, references: [navigation]),
+        )
+        .generatedFiles()
+        let model = try #require(files.first { $0.relativePath.hasSuffix("/Navigation.kt") })
+        let runtime = try #require(files.first { $0.relativePath.hasSuffix("/ApiRuntime.kt") })
+
+        #expect(model.contents.contains("@Serializable(with = StrictIntSerializer::class)\n    val requestId: Int? = null"))
+        #expect(model.contents.contains("@Serializable(with = StrictIntSerializer::class)\n    val count: Int"))
+        #expect(model.contents.contains("@Serializable(with = StrictLongSerializer::class)\n    val wideId: Long? = null"))
+        #expect(model.contents.contains("import com.example.api.StrictIntSerializer"))
+        #expect(model.contents.contains("import com.example.api.StrictLongSerializer"))
+        #expect(!model.contents.contains("StrictIntSerializer::class)\n    val label"))
+        #expect(runtime.contents.contains("object StrictIntSerializer : KSerializer<Int>"))
+        #expect(runtime.contents.contains("object StrictLongSerializer : KSerializer<Long>"))
+        #expect(runtime.contents.contains("if (primitive.isString) throw SerializationException"))
+    }
+
     @Test func `omittable bool has nullable null default in generated constructor`() {
         let property = ApiModelProperty.bool("enabled").omittable.kotlinProperty
         #expect(property.declaration == "val enabled: Boolean? = null")
@@ -539,7 +564,8 @@ import Testing
         #expect(runtime.contents.contains("PatchableValue.Modified(null)"))
         #expect(runtime.contents.contains("jsonDecoder.decodeNull()"))
         #expect(runtime.contents.contains("jsonEncoder.encodeNull()"))
-        #expect(!runtime.contents.contains("decodeJsonElement()"))
+        let patchableRuntime = try #require(runtime.contents.components(separatedBy: "data class ApiResponseType").first)
+        #expect(!patchableRuntime.contains("decodeJsonElement()"))
         #expect(!runtime.contents.contains("encodeToJsonElement(valueSerializer"))
         #expect(runtime.contents.contains("jsonDecoder.decodeSerializableValue(valueSerializer)"))
     }
