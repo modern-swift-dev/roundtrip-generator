@@ -5,6 +5,25 @@ import GeneratorModels
 import Testing
 
 @Suite(.serialized) struct KotlinApiGeneratorTests {
+    @Test func `kotlin client accepts redirected storage 200 without declaring endpoint 200`() throws {
+        let operation = ApiOperation(
+            name: "fetchImage",
+            method: .get,
+            path: .relative("/images/{id}"),
+            security: .unsecured,
+            parameters: [.path("id", .int())],
+            request: .none,
+            response: .binary(mimeType: "image/jpeg"),
+            acceptableStatuses: [302],
+            extraImports: [],
+        )
+        .withSuccessResponse(status: 302, response: .none, requiredHeaders: ["Location"])
+        .withClientOnlyAcceptableStatuses([200])
+        let files = try KotlinApiPackageGenerator(package: testPackage(operations: [operation], references: [])).generatedFiles()
+        let service = try #require(files.first { $0.relativePath.hasSuffix("/AdminUsersApi.kt") })
+        #expect(service.contents.contains("validStatusCodes = setOf(302, 200)"))
+    }
+
     @Test func `options expose gradle and ktlint defaults`() {
         let options = KotlinGeneratorOptions()
 

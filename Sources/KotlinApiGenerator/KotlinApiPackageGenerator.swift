@@ -163,7 +163,7 @@ public struct KotlinApiPackageGenerator {
             guard !operation.acceptableStatuses.isEmpty else {
                 throw KotlinGeneratorError.emptyAcceptableStatuses(operationName: operation.name)
             }
-            if let statusCode = operation.acceptableStatuses.first(where: { !(100 ... 599).contains($0) }) {
+            if let statusCode = operation.clientAcceptableStatuses.first(where: { !(100 ... 599).contains($0) }) {
                 throw KotlinGeneratorError.invalidAcceptableStatus(operationName: operation.name, statusCode: statusCode)
             }
             if case .json(nil) = operation.response {
@@ -173,7 +173,7 @@ public struct KotlinApiPackageGenerator {
                 )
             }
             if operation.response.dataType != nil,
-               let statusCode = operation.acceptableStatuses.first(where: \.isHttpBodylessStatus) {
+               let statusCode = operation.clientAcceptableStatuses.first(where: \.isHttpBodylessStatus) {
                 throw KotlinGeneratorError.typedResponseWithBodylessStatus(operationName: operation.name, statusCode: statusCode)
             }
         }

@@ -114,9 +114,9 @@ struct KotlinOperationEmitter {
 
     private var validStatusCodes: [Int] {
         guard operation.response.dataType != nil else {
-            return operation.acceptableStatuses
+            return operation.clientAcceptableStatuses
         }
-        return operation.acceptableStatuses.filter { !$0.isHttpBodylessStatus }
+        return operation.clientAcceptableStatuses.filter { !$0.isHttpBodylessStatus }
     }
 
     var hasPagedResultsResponse: Bool {

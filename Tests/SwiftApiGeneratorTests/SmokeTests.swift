@@ -1038,6 +1038,26 @@ import Testing
         #expect(!output.contains("304"))
     }
 
+    @Test func `swift client accepts redirected storage response without declaring endpoint 200`() throws {
+        let operation = ApiOperation(
+            name: "fetchImage",
+            method: .get,
+            path: .relative("/images/{id}"),
+            security: .unsecured,
+            parameters: [.path("id", .int())],
+            request: .none,
+            response: .binary(mimeType: "image/jpeg"),
+            acceptableStatuses: [302],
+            extraImports: [],
+        )
+        .withSuccessResponse(status: 302, response: .none, requiredHeaders: ["Location"])
+        .withClientOnlyAcceptableStatuses([200])
+
+        try ApiOperationValidator(operation: operation).validate()
+        let output = ApiOperationGenerator(operation: operation).swiftExecuteMethodAsyncAwait().toString()
+        #expect(output.contains("validStatusCode: [302, 200]"))
+    }
+
     @Test func `typed swift operations do not accept informational statuses for decoding`() {
         let operation = ApiOperation.post(
             name: "create",

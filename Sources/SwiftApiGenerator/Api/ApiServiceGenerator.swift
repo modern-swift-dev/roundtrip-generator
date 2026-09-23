@@ -139,7 +139,7 @@ struct ApiServiceGenerator {
     private func nextPageMethod(for operation: ApiOperation) -> FunctionDeclSyntax {
         let securitySource = nextPageSecuritySource(for: operation)
         let httpHeadersSource = nextPageHttpHeadersSource(for: operation)
-        let acceptableStatusCode = operation.acceptableStatuses
+        let acceptableStatusCode = operation.clientAcceptableStatuses
             .filter(Self.statusCodeCanCarryResponseBody)
             .map { String($0) }
             .joined(separator: ", ")

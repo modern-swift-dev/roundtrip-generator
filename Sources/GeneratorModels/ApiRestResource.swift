@@ -296,6 +296,7 @@ public struct ApiRestResource: Sendable {
                     request: extraOperation.request,
                     response: extraOperation.response,
                     acceptableStatuses: extraOperation.acceptableStatuses,
+                    clientOnlyAcceptableStatuses: extraOperation.clientOnlyAcceptableStatuses,
                     extraImports: extraOperation.extraImports,
                 ),
             )

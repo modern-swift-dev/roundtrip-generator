@@ -172,6 +172,32 @@ import Testing
         #expect(response302.contains("required: true"))
     }
 
+    @Test func `generated yaml does not declare redirected client storage response`() throws {
+        let operation = ApiOperation(
+            name: "image",
+            method: .get,
+            path: .relative("/images/{id}"),
+            security: .unsecured,
+            parameters: [.path("id", .int())],
+            request: .none,
+            response: .binary(mimeType: "image/jpeg"),
+            acceptableStatuses: [302],
+            extraImports: [],
+        )
+        .withSuccessResponse(status: 302, response: .none, requiredHeaders: ["Location"])
+        .withClientOnlyAcceptableStatuses([200])
+        let package = ApiPackage(
+            name: "Images",
+            targetDirUrl: URL(fileURLWithPath: "/unused"),
+            modules: [ApiModule(name: "Files", definitions: [ApiService(name: "Images", operations: [operation])])],
+        )
+
+        let yaml = try OpenApiYamlPackageGenerator(package: package).generatedFile().contents
+        #expect(yaml.contains("\"302\":"))
+        #expect(yaml.contains("Location:"))
+        #expect(!yaml.contains("\"200\":"))
+    }
+
     @Test func `generated yaml declares repeatable receipts while leaving single multipart parts binary`() throws {
         let operation = ApiOperation.postMultipart(
             name: "upload",

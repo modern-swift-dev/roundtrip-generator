@@ -174,7 +174,7 @@ public struct KotlinAndroidApiPackageGenerator {
             guard !operation.acceptableStatuses.isEmpty else {
                 throw KotlinAndroidGeneratorError.emptyAcceptableStatuses(operationName: operation.name)
             }
-            if let statusCode = operation.acceptableStatuses.first(where: { !(100 ... 599).contains($0) }) {
+            if let statusCode = operation.clientAcceptableStatuses.first(where: { !(100 ... 599).contains($0) }) {
                 throw KotlinAndroidGeneratorError.invalidAcceptableStatus(operationName: operation.name, statusCode: statusCode)
             }
             if case .json(nil) = operation.response {
@@ -184,7 +184,7 @@ public struct KotlinAndroidApiPackageGenerator {
                 )
             }
             if operation.response.dataType != nil,
-               let statusCode = operation.acceptableStatuses.first(where: \.isHttpBodylessStatus) {
+               let statusCode = operation.clientAcceptableStatuses.first(where: \.isHttpBodylessStatus) {
                 throw KotlinAndroidGeneratorError.typedResponseWithBodylessStatus(operationName: operation.name, statusCode: statusCode)
             }
         }

@@ -62,6 +62,14 @@ public struct ApiOperation: Sendable {
     /// The acceptable status
     public let acceptableStatuses: [Int]
 
+    /// Additional statuses accepted by clients after HTTP redirects, not declared endpoint responses.
+    public let clientOnlyAcceptableStatuses: [Int]
+
+    /// Statuses accepted when a generated client observes the final HTTP response.
+    public var clientAcceptableStatuses: [Int] {
+        acceptableStatuses + clientOnlyAcceptableStatuses
+    }
+
     /// Status-specific overrides for successful response bodies and required headers.
     public let successResponses: [ApiSuccessResponse]
 
@@ -93,6 +101,7 @@ public struct ApiOperation: Sendable {
         textMultipartParts: Set<String> = [],
         response: ApiResponseBody,
         acceptableStatuses: [Int],
+        clientOnlyAcceptableStatuses: [Int] = [],
         successResponses: [ApiSuccessResponse] = [],
         publicErrors: [ApiPublicError] = [],
         extraImports: [ApiImport],
@@ -107,6 +116,7 @@ public struct ApiOperation: Sendable {
         self.textMultipartParts = textMultipartParts
         self.response = response
         self.acceptableStatuses = acceptableStatuses
+        self.clientOnlyAcceptableStatuses = clientOnlyAcceptableStatuses
         self.successResponses = successResponses
         self.publicErrors = publicErrors
         self.extraImports = extraImports
@@ -135,6 +145,7 @@ public extension ApiOperation {
             textMultipartParts: textMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
+            clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
@@ -174,6 +185,7 @@ public extension ApiOperation {
             textMultipartParts: textMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
+            clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
@@ -211,6 +223,7 @@ public extension ApiOperation {
             textMultipartParts: textMultipartParts,
             response: adaptedResponse,
             acceptableStatuses: acceptableStatuses,
+            clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
@@ -235,6 +248,7 @@ public extension ApiOperation {
             textMultipartParts: textMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
+            clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
@@ -257,6 +271,7 @@ public extension ApiOperation {
             textMultipartParts: textMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
+            clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports + extras,
@@ -277,6 +292,7 @@ public extension ApiOperation {
             textMultipartParts: textMultipartParts,
             response: self.response,
             acceptableStatuses: acceptableStatuses,
+            clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
             successResponses: successResponses + [.init(status: status, response: response, requiredHeaders: requiredHeaders)],
             publicErrors: publicErrors,
             extraImports: extraImports,
@@ -297,6 +313,7 @@ public extension ApiOperation {
             textMultipartParts: textMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
+            clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
@@ -317,6 +334,7 @@ public extension ApiOperation {
             textMultipartParts: textMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
+            clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
@@ -337,6 +355,28 @@ public extension ApiOperation {
             textMultipartParts: names,
             response: response,
             acceptableStatuses: acceptableStatuses,
+            clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
+            successResponses: successResponses,
+            publicErrors: publicErrors,
+            extraImports: extraImports,
+        )
+    }
+
+    /// Accepts additional client-observed statuses without declaring endpoint responses.
+    func withClientOnlyAcceptableStatuses(_ statuses: [Int]) -> ApiOperation {
+        .init(
+            name: name,
+            method: method,
+            path: path,
+            security: security,
+            parameters: parameters,
+            request: request,
+            repeatedMultipartParts: repeatedMultipartParts,
+            optionalMultipartParts: optionalMultipartParts,
+            textMultipartParts: textMultipartParts,
+            response: response,
+            acceptableStatuses: acceptableStatuses,
+            clientOnlyAcceptableStatuses: statuses,
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,

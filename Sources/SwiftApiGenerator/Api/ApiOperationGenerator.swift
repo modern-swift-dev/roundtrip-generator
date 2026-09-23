@@ -25,9 +25,9 @@ struct ApiOperationGenerator {
 
     private var acceptableStatusCodes: [Int] {
         guard operation.response.swiftDecodableDataType != nil else {
-            return operation.acceptableStatuses
+            return operation.clientAcceptableStatuses
         }
-        return operation.acceptableStatuses.filter(Self.statusCodeCanCarryResponseBody)
+        return operation.clientAcceptableStatuses.filter(Self.statusCodeCanCarryResponseBody)
     }
 
     private static func statusCodeCanCarryResponseBody(_ statusCode: Int) -> Bool {

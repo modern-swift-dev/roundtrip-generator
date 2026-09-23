@@ -35,12 +35,12 @@ struct ApiOperationValidator {
             throw ApiValidationError.failed("Operation \(operation.name) must have at least one acceptable status")
         }
 
-        guard operation.acceptableStatuses.allSatisfy({ 100 ... 599 ~= $0 }) else {
+        guard operation.clientAcceptableStatuses.allSatisfy({ 100 ... 599 ~= $0 }) else {
             throw ApiValidationError.failed("Operation \(operation.name) has invalid acceptable status")
         }
 
         if operation.response.swiftDecodableDataType != nil {
-            let decodableStatuses = operation.acceptableStatuses.filter(Self.statusCodeCanCarryResponseBody)
+            let decodableStatuses = operation.clientAcceptableStatuses.filter(Self.statusCodeCanCarryResponseBody)
             guard !decodableStatuses.isEmpty else {
                 throw ApiValidationError.failed("Operation \(operation.name) has a typed response but no acceptable status can carry a response body")
             }

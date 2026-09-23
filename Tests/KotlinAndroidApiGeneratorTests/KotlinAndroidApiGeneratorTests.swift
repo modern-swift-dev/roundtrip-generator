@@ -5,6 +5,25 @@ import GeneratorModels
 import Testing
 
 @Suite(.serialized) struct KotlinAndroidApiGeneratorTests {
+    @Test func `android client accepts redirected storage 200 without declaring endpoint 200`() throws {
+        let operation = ApiOperation(
+            name: "fetchImage",
+            method: .get,
+            path: .relative("/images/{id}"),
+            security: .unsecured,
+            parameters: [.path("id", .int())],
+            request: .none,
+            response: .binary(mimeType: "image/jpeg"),
+            acceptableStatuses: [302],
+            extraImports: [],
+        )
+        .withSuccessResponse(status: 302, response: .none, requiredHeaders: ["Location"])
+        .withClientOnlyAcceptableStatuses([200])
+        let files = try KotlinAndroidApiPackageGenerator(package: testPackage(operations: [operation], references: [])).generatedFiles()
+        let service = try #require(files.first { $0.relativePath.hasSuffix("/AdminUsersApi.kt") })
+        #expect(service.contents.contains("validStatusCodes = setOf(302, 200)"))
+    }
+
     @Test func `integer fields reject quoted JSON numbers through strict serializers`() throws {
         let navigation = ApiTypeSchema.object(typeName: "Navigation", properties: [
             .int("requestId").optional,

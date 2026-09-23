@@ -209,6 +209,27 @@ struct TypeScriptBackendGeneratorTests {
         #expect(routes.contains("Uint8Array | void"))
     }
 
+    @Test func `generated backend does not allow client only storage status`() throws {
+        let operation = ApiOperation(
+            name: "image",
+            method: .get,
+            path: .relative("/images/{id}"),
+            security: .unsecured,
+            parameters: [.path("id", .int())],
+            request: .none,
+            response: .binary(mimeType: "image/jpeg"),
+            acceptableStatuses: [302],
+            extraImports: [],
+        )
+        .withSuccessResponse(status: 302, response: .none, requiredHeaders: ["Location"])
+        .withClientOnlyAcceptableStatuses([200])
+        let files = try TypeScriptBackendApiPackageGenerator(package: testPackage(operation: operation)).generatedFiles()
+        let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+
+        #expect(routes.contains("validateGeneratedResponseStatus(output.status, [302])"))
+        #expect(!routes.contains("validateGeneratedResponseStatus(output.status, [302, 200])"))
+    }
+
     @Test func `generated backend rejects success overrides outside declared statuses`() {
         let operation = ApiOperation(
             name: "receipt",
