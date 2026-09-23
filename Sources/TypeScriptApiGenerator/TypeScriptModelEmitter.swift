@@ -78,9 +78,19 @@ struct TypeScriptModelEmitter {
     private func objectDeclaration(typeName: String, properties: [ApiModelProperty]) -> String {
         let name = typeName.tsTypeName
         let fields = properties.map(propertyDeclaration).joined(separator: "\n")
+        let nullChecks = properties
+            .filter { $0.presence == .optionalNonNullable }
+            .map { property in
+                nullCheck(for: property, value: "object[\(property.rawName.tsStringLiteral)]")
+            }
+            .joined(separator: "\n")
         let decodes = properties.map { property in
             let value = "object[\(property.rawName.tsStringLiteral)]"
-            return "\(property.propertyName.tsPropertyName): \(decodeExpression(for: property.dataType, value: value, optional: !property.required)),"
+            let decoded = decodeExpression(for: property.dataType, value: value, optional: property.presence == .optionalNullable)
+            let expression = property.presence == .optionalNonNullable
+                ? "\(value) === undefined ? undefined : \(decoded)"
+                : decoded
+            return "\(property.propertyName.tsPropertyName): \(expression),"
         }
         .joined(separator: "\n")
         let encodes = properties.map { property in
@@ -88,9 +98,15 @@ struct TypeScriptModelEmitter {
             if property.required {
                 return "output[\(property.rawName.tsStringLiteral)] = \(encodeExpression(for: property.dataType, value: prop));"
             }
+            let nullCheck = property.presence == .optionalNonNullable
+                ? "\(nullCheck(for: property, value: prop))\n    "
+                : ""
+            let encoded = property.presence == .optionalNullable
+                ? "\(prop) === null ? null : \(encodeExpression(for: property.dataType, value: prop))"
+                : encodeExpression(for: property.dataType, value: prop)
             return """
             if (\(prop) !== undefined) {
-                output[\(property.rawName.tsStringLiteral)] = \(prop) === null ? null : \(encodeExpression(for: property.dataType, value: prop));
+                \(nullCheck)output[\(property.rawName.tsStringLiteral)] = \(encoded);
             }
             """
         }
@@ -103,6 +119,7 @@ struct TypeScriptModelEmitter {
 
         export function decode\(name)(value: unknown): \(name) {
             const object = (value ?? {}) as Record<string, unknown>;
+        \(nullChecks.prepad())
             return {
         \(decodes.prepad(2))
             };
@@ -188,8 +205,19 @@ struct TypeScriptModelEmitter {
         let typeUnion = cases.joined(separator: "\n    | ")
 
         let decoderCases = objectTypes.map { objectType in
+            let nullChecks = extraProperties
+                .filter { $0.presence == .optionalNonNullable }
+                .map { property in
+                    nullCheck(for: property, value: "object[\(property.rawName.tsStringLiteral)]")
+                }
+                .joined(separator: "\n")
             let extraDecodes = extraProperties.map { property in
-                "\(property.propertyName.tsPropertyName): \(decodeExpression(for: property.dataType, value: "object[\(property.rawName.tsStringLiteral)]", optional: !property.required)),"
+                let value = "object[\(property.rawName.tsStringLiteral)]"
+                let decoded = decodeExpression(for: property.dataType, value: value, optional: property.presence == .optionalNullable)
+                let expression = property.presence == .optionalNonNullable
+                    ? "\(value) === undefined ? undefined : \(decoded)"
+                    : decoded
+                return "\(property.propertyName.tsPropertyName): \(expression),"
             }.joined(separator: "\n")
             let payloadSource = objectDataPropertyName == "__self__"
                 ? "value"
@@ -197,6 +225,7 @@ struct TypeScriptModelEmitter {
             let payloadDecode = decodeExpression(for: objectType.objectType, value: payloadSource, optional: false)
             return """
             case \(objectType.objectTypeRawName.tsStringLiteral):
+            \(nullChecks.prepad())
                 return {
                     objectType: \(objectType.objectTypeRawName.tsStringLiteral),
                     payload: \(payloadDecode),
@@ -215,9 +244,15 @@ struct TypeScriptModelEmitter {
                 if property.required {
                     return "output[\(property.rawName.tsStringLiteral)] = \(encodeExpression(for: property.dataType, value: prop));"
                 }
+                let nullCheck = property.presence == .optionalNonNullable
+                    ? "\(nullCheck(for: property, value: prop))\n    "
+                    : ""
+                let encoded = property.presence == .optionalNullable
+                    ? "\(prop) === null ? null : \(encodeExpression(for: property.dataType, value: prop))"
+                    : encodeExpression(for: property.dataType, value: prop)
                 return """
                 if (\(prop) !== undefined) {
-                    output[\(property.rawName.tsStringLiteral)] = \(prop) === null ? null : \(encodeExpression(for: property.dataType, value: prop));
+                    \(nullCheck)output[\(property.rawName.tsStringLiteral)] = \(encoded);
                 }
                 """
             }
@@ -265,8 +300,13 @@ struct TypeScriptModelEmitter {
     private func propertyDeclaration(for property: ApiModelProperty) -> String {
         let type = TypeScriptTypeEmitter(dataType: property.dataType, options: options).declaration
         let optional = property.required ? "" : "?"
-        let nullable = property.required ? "" : " | null"
+        let nullable = property.presence == .optionalNullable ? " | null" : ""
         return "\(property.propertyName.tsPropertyName)\(optional): \(type)\(nullable);"
+    }
+
+    private func nullCheck(for property: ApiModelProperty, value: String) -> String {
+        let message = "\(property.rawName) cannot be null".tsStringLiteral
+        return "if (\(value) === null) throw new TypeError(\(message));"
     }
 
     func decodeExpression(for dataType: ApiTypeSchema, value: String, optional: Bool = false) -> String {

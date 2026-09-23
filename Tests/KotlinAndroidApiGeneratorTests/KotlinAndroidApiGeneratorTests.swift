@@ -5,6 +5,11 @@ import GeneratorModels
 import Testing
 
 @Suite(.serialized) struct KotlinAndroidApiGeneratorTests {
+    @Test func `omittable bool has nullable null default in generated constructor`() {
+        let property = ApiModelProperty.bool("enabled").omittable.kotlinProperty
+        #expect(property.declaration == "val enabled: Boolean? = null")
+    }
+
     @Test func `dynamic objects use serialization opt in`() throws {
         let payload = ApiTypeSchema.object(typeName: "Payload", properties: [.string("value")])
         let dynamic = ApiTypeSchema.dynamicObject(

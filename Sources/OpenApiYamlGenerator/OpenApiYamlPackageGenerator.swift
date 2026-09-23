@@ -447,9 +447,8 @@ public struct OpenApiYamlPackageGenerator {
                 for property in published {
                     yaml.map(OpenApiYamlWriter.quotedKey(property.rawName)) {
                         renderSchema(property.dataType, &yaml, context: &context)
-                        // Optional contract fields carry the API's patch semantics:
-                        // they may be omitted or explicitly cleared with null.
-                        if !property.required {
+                        // Nullable optional fields may be omitted or explicitly cleared with null.
+                        if property.presence == .optionalNullable {
                             yaml.scalar("nullable", true)
                         }
                         if case let .booleanLiteral(value) = property.constraint {

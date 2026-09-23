@@ -24,6 +24,11 @@ import Testing
         #expect(options.generateKoinModule)
     }
 
+    @Test func `omittable bool has nullable null default in generated constructor`() {
+        let property = ApiModelProperty.bool("enabled").omittable.kotlinProperty
+        #expect(property.declaration == "val enabled: Boolean? = null")
+    }
+
     @Test func `generated project includes gradle editor config and ktlint`() throws {
         let files = try KotlinApiPackageGenerator(package: testPackage()).generatedFiles()
         let paths = Set(files.map(\.relativePath))
@@ -191,6 +196,23 @@ import Testing
         #expect(output.contains("@OptIn(ExperimentalSerializationApi::class)"))
         #expect(output.contains("@JsonClassDiscriminator(\"kind\")"))
         #expect(output.contains("@SerialName(\"extras\")"))
+    }
+
+    @Test func `required boolean defaults remain present on the wire`() throws {
+        let flags = ApiTypeSchema.object(typeName: "Flags", properties: [
+            .bool("enabled", initialValue: true),
+            .bool("archived", initialValue: false),
+            .bool("optional_flag", propertyName: "optionalFlag").optional
+        ])
+        let files = try KotlinApiPackageGenerator(
+            package: testPackage(response: flags.asRef, references: [flags]),
+        ).generatedFiles()
+        let model = try #require(files.first { $0.relativePath.hasSuffix("/Flags.kt") })
+
+        #expect(model.contents.contains("@EncodeDefault(EncodeDefault.Mode.ALWAYS)\n    val enabled: Boolean = true"))
+        #expect(model.contents.contains("@EncodeDefault(EncodeDefault.Mode.ALWAYS)\n    val archived: Boolean = false"))
+        #expect(model.contents.contains("val optionalFlag: Boolean? = null"))
+        #expect(!model.contents.contains("@EncodeDefault(EncodeDefault.Mode.ALWAYS)\n    val optionalFlag"))
     }
 
     @Test func `string enum garbage uses custom serializer for unknown json values`() throws {

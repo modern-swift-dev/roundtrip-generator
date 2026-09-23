@@ -514,7 +514,7 @@ extension ApiTypeSchema: Hashable, Equatable {
         lhs.rawName == rhs.rawName &&
             lhs.propertyName == rhs.propertyName &&
             lhs.dataType == rhs.dataType &&
-            lhs.required == rhs.required &&
+            lhs.presence == rhs.presence &&
             lhs.equatable == rhs.equatable &&
             lhs.hashable == rhs.hashable &&
             lhs.publishedAsField == rhs.publishedAsField
@@ -524,7 +524,7 @@ extension ApiTypeSchema: Hashable, Equatable {
         hasher.combine(property.rawName)
         hasher.combine(property.propertyName)
         hasher.combine(property.dataType)
-        hasher.combine(property.required)
+        hasher.combine(property.presence)
         hasher.combine(property.equatable)
         hasher.combine(property.hashable)
         hasher.combine(property.publishedAsField)

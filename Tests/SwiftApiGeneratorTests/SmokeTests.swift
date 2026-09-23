@@ -1632,6 +1632,20 @@ import Testing
         #expect(output?.contains("public init(nickname: String? = \"guest\")") == true)
     }
 
+    @Test func `omittable bool defaults to nil in generated initializer`() {
+        let dataType = ApiTypeSchema.object(typeName: "UpdateFields", properties: [
+            .bool("enabled").omittable,
+            .bool("legacy_enabled", propertyName: "legacyEnabled", required: false)
+        ])
+
+        let output = ApiTypeSchemaGenerator(dataType: dataType)
+            .getSwiftClass(parentClassName: nil, outputWithExtension: false)?
+            .asNode()
+            .toString()
+
+        #expect(output?.contains("public init(enabled: Bool? = nil, legacyEnabled: Bool? = false)") == true)
+    }
+
     @Test func `api property factories preserve reference and collection types`() {
         let user = ApiTypeSchema.object(typeName: "User", properties: [])
         let ref = ApiModelProperty.ref("owner", of: user)

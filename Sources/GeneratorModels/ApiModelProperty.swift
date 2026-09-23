@@ -6,6 +6,12 @@ public enum ApiModelPropertyConstraint: Sendable {
     case booleanLiteral(Bool)
 }
 
+public enum ApiModelPropertyPresence: Sendable, Hashable {
+    case required
+    case optionalNullable
+    case optionalNonNullable
+}
+
 public struct ApiModelProperty: Sendable {
     /// The raw name, for the coding key
     public var rawName: String
@@ -16,8 +22,13 @@ public struct ApiModelProperty: Sendable {
     /// The data type
     public var dataType: ApiTypeSchema
 
-    /// Is the property required
-    public var required: Bool = true
+    /// Whether the wire property is required, omittable, and/or nullable.
+    public var presence: ApiModelPropertyPresence = .required
+
+    public var required: Bool {
+        get { presence == .required }
+        set { presence = newValue ? .required : .optionalNullable }
+    }
 
     /// Is the property part of the equatable protocol
     public var equatable: Bool = false
@@ -44,7 +55,7 @@ public struct ApiModelProperty: Sendable {
         self.rawName = rawName
         self.propertyName = propertyName
         self.dataType = dataType
-        self.required = required
+        presence = required ? .required : .optionalNullable
         self.equatable = equatable
         self.hashable = hashable
         self.publishedAsField = publishedAsField
@@ -69,16 +80,9 @@ extension ApiModelProperty: Comparable {
 public extension ApiModelProperty {
     /// Return an unpublished version of this property.
     var unpublished: ApiModelProperty {
-        .init(
-            rawName: rawName,
-            propertyName: propertyName,
-            dataType: dataType,
-            required: required,
-            equatable: equatable,
-            hashable: hashable,
-            publishedAsField: false,
-            constraint: constraint,
-        )
+        var copy = self
+        copy.publishedAsField = false
+        return copy
     }
 }
 
@@ -87,28 +91,23 @@ public extension ApiModelProperty {
 public extension ApiModelProperty {
     /// Return an optional version of this property
     var optional: ApiModelProperty {
-        .init(
-            rawName: rawName,
-            propertyName: propertyName,
-            dataType: dataType,
-            required: false,
-            equatable: equatable,
-            hashable: hashable,
-            publishedAsField: publishedAsField,
-        )
+        var copy = self
+        copy.presence = .optionalNullable
+        return copy
+    }
+
+    /// Return a property that may be omitted but rejects explicit `null`.
+    var omittable: ApiModelProperty {
+        var copy = self
+        copy.presence = .optionalNonNullable
+        return copy
     }
 
     /// Return a mandatory version of this property
     var mandatory: ApiModelProperty {
-        .init(
-            rawName: rawName,
-            propertyName: propertyName,
-            dataType: dataType,
-            required: true,
-            equatable: equatable,
-            hashable: hashable,
-            publishedAsField: publishedAsField,
-        )
+        var copy = self
+        copy.presence = .required
+        return copy
     }
 }
 

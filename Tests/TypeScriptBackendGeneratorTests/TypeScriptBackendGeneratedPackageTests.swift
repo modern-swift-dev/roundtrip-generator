@@ -5,6 +5,53 @@ import Testing
 
 struct TypeScriptBackendGeneratedPackageTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
+    func generatedModelsDistinguishOmissionFromExplicitNull() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let update = ApiTypeSchema.object(typeName: "UpdateFields", properties: [
+            .string("name").omittable,
+            .string("nullable_note", propertyName: "nullableNote").optional
+        ])
+        let operation = ApiOperation.post(
+            name: "update",
+            path: .relative("/fields"),
+            security: .unsecured,
+            request: update.asRef,
+            response: update.asRef,
+        )
+        let package = ApiPackage(
+            name: "FieldPresence",
+            targetDirUrl: root,
+            modules: [ApiModule(name: "Fields", definitions: [ApiService(name: "Updates", operations: [operation], references: [update])])],
+        )
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let files = try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()
+        let models = try #require(files.first { $0.relativePath == "src/generated/models.ts" }?.contents)
+        #expect(models.contains("name?: string;"))
+        #expect(models.contains("nullableNote?: string | null;"))
+        for file in files {
+            try file.write(to: root)
+        }
+        try """
+        import assert from "node:assert/strict";
+        import { decodeUpdateFields, encodeUpdateFields } from "./dist/generated/models.js";
+
+        assert.equal(decodeUpdateFields({}).name, undefined);
+        assert.equal(decodeUpdateFields({ name: "Ada" }).name, "Ada");
+        assert.throws(() => decodeUpdateFields({ name: null }));
+        assert.equal(decodeUpdateFields({ nullable_note: null }).nullableNote, null);
+        assert.equal(JSON.stringify(encodeUpdateFields({})), "{}");
+        assert.equal(JSON.stringify(encodeUpdateFields({ name: "Ada", nullableNote: null })), '{"name":"Ada","nullable_note":null}');
+        assert.throws(() => encodeUpdateFields({ name: null }));
+        """.write(to: root.appendingPathComponent("test.mjs"), atomically: true, encoding: .utf8)
+
+        try run(["install", "--ignore-scripts", "--package-lock=false"], in: root)
+        try run(["run", "build"], in: root)
+        try run(["exec", "--", "node", "test.mjs"], in: root)
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
     func generatedPackageCompilesAndServesItsRoute() throws {
         let dumpPath = ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_DUMP_PATH"]
         let root = dumpPath.map(URL.init(fileURLWithPath:)) ?? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

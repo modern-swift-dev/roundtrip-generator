@@ -93,6 +93,56 @@ import Testing
         #expect(output.contains("this.client.execute(buildAdminUsersGetRequest(adaptedRequest), [200], ModelCodecs.decodeUser)"))
     }
 
+    @Test func `omittable model fields exclude null and preserve omission`() throws {
+        let update = ApiTypeSchema.object(typeName: "UpdateFields", properties: [
+            .string("name").omittable,
+            .string("nullable_note", propertyName: "nullableNote").optional
+        ])
+        let files = try TypeScriptApiPackageGenerator(
+            package: testPackage(response: update.asRef, references: [update]),
+        ).generatedFiles()
+        let models = try #require(files.first { $0.relativePath == "src/generated/models.ts" }?.contents)
+
+        #expect(models.contains("name?: string;"))
+        #expect(models.contains("nullableNote?: string | null;"))
+        #expect(models.contains("name: object[\"name\"] === undefined ? undefined"))
+        #expect(models.contains("if (value.name !== undefined)"))
+        #expect(models.contains("if (value.name === null) throw"))
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_TYPESCRIPT_RUNTIME_TEST"] != nil))
+    func `generated type script client enforces omittable fields at wire boundary`() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let update = ApiTypeSchema.object(typeName: "UpdateFields", properties: [
+            .string("name").omittable,
+            .string("nullable_note", propertyName: "nullableNote").optional
+        ])
+        let files = try TypeScriptApiPackageGenerator(
+            package: testPackage(response: update.asRef, references: [update]),
+        ).generatedFiles()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for file in files {
+            try file.write(to: root)
+        }
+        try """
+        import assert from "node:assert/strict";
+        import { decodeUpdateFields, encodeUpdateFields } from "./dist/generated/models.js";
+
+        assert.equal(decodeUpdateFields({}).name, undefined);
+        assert.equal(decodeUpdateFields({ name: "Ada" }).name, "Ada");
+        assert.throws(() => decodeUpdateFields({ name: null }));
+        assert.equal(decodeUpdateFields({ nullable_note: null }).nullableNote, null);
+        assert.equal(JSON.stringify(encodeUpdateFields({})), "{}");
+        assert.equal(JSON.stringify(encodeUpdateFields({ name: "Ada", nullableNote: null })), '{"name":"Ada","nullable_note":null}');
+        assert.throws(() => encodeUpdateFields({ name: null }));
+        """.write(to: root.appendingPathComponent("test.mjs"), atomically: true, encoding: .utf8)
+
+        try runNpm(["install", "--ignore-scripts", "--package-lock=false"], in: root)
+        try runNpm(["run", "build"], in: root)
+        try runNpm(["exec", "--", "node", "test.mjs"], in: root)
+    }
+
     @Test func `generated type script uses swift defaults for optional bool and dynamic garbage`() throws {
         let payload = ApiTypeSchema.object(typeName: "Payload", properties: [.string("value")])
         let dynamic = ApiTypeSchema.dynamicObject(
@@ -277,6 +327,22 @@ import Testing
             commonReferences: [],
             imports: [],
         )
+    }
+
+    private func runNpm(_ arguments: [String], in directory: URL) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["npm"] + arguments
+        process.currentDirectoryURL = directory
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            let message = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            throw NSError(domain: "TypeScriptApiGeneratorTests", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: message])
+        }
     }
 }
 

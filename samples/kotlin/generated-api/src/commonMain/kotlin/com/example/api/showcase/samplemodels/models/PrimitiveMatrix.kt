@@ -8,6 +8,7 @@ import com.example.api.NamedObject
 import com.example.api.showcase.shared.SampleVisibility
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
@@ -37,6 +38,7 @@ data class PrimitiveMatrix(
     @SerialName("unsigned_tiny_count")
     val unsignedTinyCount: UByte = 1u,
     val ratio: Double = 0.5,
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     val enabled: Boolean = true,
     @SerialName("created_at")
     val createdAt: Instant,
@@ -57,6 +59,7 @@ data class PrimitiveMatrix(
     val related: List<NamedObject>,
     @SerialName("external_window")
     val externalWindow: DateInterval,
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     val archived: Boolean = false,
 ) {
     override fun equals(other: Any?): Boolean {

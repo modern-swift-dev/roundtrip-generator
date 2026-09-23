@@ -83,6 +83,19 @@ import Testing
         #expect(!yaml.contains("required:\n        - \"name\""))
     }
 
+    @Test func `omittable model properties are not nullable`() throws {
+        let profile = ApiTypeSchema.object(typeName: "Profile", properties: [
+            .string("name").omittable,
+            .string("nickname").optional
+        ])
+        let package = ApiPackage(name: "Omittable", targetDirUrl: URL(fileURLWithPath: "/unused"), modules: [], references: [profile])
+
+        let yaml = try OpenApiYamlPackageGenerator(package: package).generatedFile().contents
+
+        #expect(yaml.contains("name:\n          type: \"string\"\n        nickname:\n          type: \"string\"\n          nullable: true"))
+        #expect(!yaml.contains("required:\n        - \"name\""))
+    }
+
     @Test func `generated yaml excludes runtime paths and includes multipart binary cookie and external references`() throws {
         let receipt = ApiTypeSchema.object(typeName: "Receipt", properties: [
             .string("state")

@@ -15,11 +15,16 @@ extension ApiModelProperty {
         let patchableAnnotations = dataType.isKotlinPatchableValue
             ? ["@EncodeDefault(EncodeDefault.Mode.NEVER)"]
             : []
+        let requiredBooleanAnnotations: [String] = if required, case .bool = dataType {
+            ["@EncodeDefault(EncodeDefault.Mode.ALWAYS)"]
+        } else {
+            []
+        }
         let serializerAnnotations = dataType.usesDirectKotlinByteArraySerializer
             ? ["@Serializable(with = ByteArrayBase64Serializer::class)"]
             : []
         var imports: Set<String> = needsSerialName ? ["kotlinx.serialization.SerialName"] : []
-        if dataType.isKotlinPatchableValue {
+        if dataType.isKotlinPatchableValue || !requiredBooleanAnnotations.isEmpty {
             imports.insert("kotlinx.serialization.EncodeDefault")
         }
 
@@ -28,7 +33,7 @@ extension ApiModelProperty {
             typeName: KotlinTypeEmitter(dataType: dataType, options: options).typeName,
             nullable: dataType.isKotlinPatchableValue ? false : !required,
             defaultValue: dataType.kotlinDefaultValue(required: required, options: options),
-            annotations: annotations + patchableAnnotations + serializerAnnotations,
+            annotations: annotations + patchableAnnotations + requiredBooleanAnnotations + serializerAnnotations,
             additionalImports: imports,
         )
     }

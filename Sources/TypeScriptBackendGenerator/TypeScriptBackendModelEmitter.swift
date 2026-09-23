@@ -75,17 +75,21 @@ struct TypeScriptBackendModelEmitter {
         let interfaceFields = publishedProperties.map { property in
             let patchable = property.dataType.isBackendPatchableValue
             let optional = property.required && !patchable ? "" : "?"
-            let nullable = property.required || patchable ? "" : " | null"
+            let nullable = property.presence == .optionalNullable && !patchable ? " | null" : ""
             return "\(property.propertyName.backendPropertyName)\(optional): \(typeDeclaration(for: property.dataType))\(nullable);"
         }.joined(separator: "\n")
         let schemaFields = publishedProperties.map { property in
-            let optional = property.dataType.isBackendPatchableValue ? ".optional()" : property.required ? "" : ".nullable().optional()"
+            let optional = property.dataType.isBackendPatchableValue
+                ? ".optional()"
+                : property.required ? "" : property.presence == .optionalNullable ? ".nullable().optional()" : ".optional()"
             return "\(property.rawName.backendStringLiteral): \(schemaExpression(for: property))\(optional),"
         }.joined(separator: "\n")
         let decodedFields = publishedProperties.map { property in
             let value = "object[\(property.rawName.backendStringLiteral)]"
             let decoded = decodeExpression(for: property.dataType, value: value)
             let expression: String = if property.dataType.isBackendPatchableValue {
+                "(\(value) === undefined ? undefined : \(decoded))"
+            } else if property.presence == .optionalNonNullable {
                 "(\(value) === undefined ? undefined : \(decoded))"
             } else {
                 decodeExpression(for: property.dataType, value: value, optional: !property.required)
@@ -97,6 +101,8 @@ struct TypeScriptBackendModelEmitter {
             let encoded = encodeExpression(for: property.dataType, value: value)
             let optional: String = if property.dataType.isBackendPatchableValue {
                 "(\(value) === undefined || String(\(value).state) === \"unmodified\" ? undefined : \(encoded))"
+            } else if property.presence == .optionalNonNullable {
+                "(\(value) === undefined ? undefined : \(encoded))"
             } else {
                 property.required ? encoded : "(\(value) == null ? \(value) : \(encoded))"
             }
@@ -190,7 +196,7 @@ struct TypeScriptBackendModelEmitter {
         let typeCases = objectTypes.map { objectType in
             let extraFields = extraProperties.map { property in
                 let optional = property.required ? "" : "?"
-                let nullable = property.required ? "" : " | null"
+                let nullable = property.presence == .optionalNullable ? " | null" : ""
                 return "\(property.propertyName.backendPropertyName)\(optional): \(typeDeclaration(for: property.dataType))\(nullable);"
             }.joined(separator: "\n")
             let extra = extraFields.isEmpty ? "" : "\n\(extraFields)"
@@ -198,7 +204,7 @@ struct TypeScriptBackendModelEmitter {
         }.joined(separator: "\n    | ")
 
         let extraSchemaFields = extraProperties.map { property in
-            let optional = property.required ? "" : ".nullable().optional()"
+            let optional = property.required ? "" : property.presence == .optionalNullable ? ".nullable().optional()" : ".optional()"
             return "\(property.rawName.backendStringLiteral): \(schemaExpression(for: property.dataType))\(optional),"
         }
         let payloadSchemaFields: [String] = objectDataPropertyName == "__self__"
@@ -225,7 +231,11 @@ struct TypeScriptBackendModelEmitter {
             let payload = decodeExpression(for: objectType.objectType, value: payloadSource)
             let extras = extraProperties.map { property in
                 let value = "object[\(property.rawName.backendStringLiteral)]"
-                return "\(property.propertyName.backendPropertyName): \(decodeExpression(for: property.dataType, value: value, optional: !property.required)),"
+                let decoded = decodeExpression(for: property.dataType, value: value, optional: property.presence == .optionalNullable)
+                let expression = property.presence == .optionalNonNullable
+                    ? "(\(value) === undefined ? undefined : \(decoded))"
+                    : decoded
+                return "\(property.propertyName.backendPropertyName): \(expression),"
             }.joined(separator: "\n")
             return """
             case \(objectType.objectTypeRawName.backendStringLiteral):
@@ -244,7 +254,8 @@ struct TypeScriptBackendModelEmitter {
                 if property.required {
                     return "output[\(property.rawName.backendStringLiteral)] = \(encoded);"
                 }
-                return "if (\(value) !== undefined) { output[\(property.rawName.backendStringLiteral)] = \(value) === null ? null : \(encoded); }"
+                let expression = property.presence == .optionalNullable ? "\(value) === null ? null : \(encoded)" : encoded
+                return "if (\(value) !== undefined) { output[\(property.rawName.backendStringLiteral)] = \(expression); }"
             }.joined(separator: "\n")
             let payload = "\(schemaExpression(for: objectType.objectType)).parse(\(encodeExpression(for: objectType.objectType, value: "value.payload")))"
             let payloadLine = objectDataPropertyName == "__self__"

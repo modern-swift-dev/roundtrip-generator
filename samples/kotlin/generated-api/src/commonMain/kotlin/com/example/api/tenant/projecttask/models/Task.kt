@@ -1,6 +1,7 @@
 // Generated code. Do not edit.
 package com.example.api.tenant.projecttask.models
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.time.Instant
@@ -12,5 +13,6 @@ data class Task(
     val details: String? = null,
     @SerialName("due_at")
     val dueAt: Instant? = null,
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     val done: Boolean = false,
 )

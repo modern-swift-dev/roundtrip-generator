@@ -20,7 +20,10 @@ extension ApiModelProperty {
 
     /// The swift code for inclusing in an initializer signature
     func getDefaultValue() -> String? {
-        ApiTypeSchemaGenerator(dataType: dataType).getDefaultValue(required: required)
+        if presence == .optionalNonNullable {
+            return "nil"
+        }
+        return ApiTypeSchemaGenerator(dataType: dataType).getDefaultValue(required: required)
     }
 }
 

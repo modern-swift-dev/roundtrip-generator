@@ -2,16 +2,21 @@ package com.example.api
 
 import com.example.api.admin.user.models.PatchedUser
 import com.example.api.showcase.samplemodels.models.NotificationEnvelope
+import com.example.api.showcase.samplemodels.models.PrimitiveMatrix
 import com.example.api.showcase.samplemodels.models.SampleScore
 import com.example.api.showcase.shared.SampleVisibility
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalTime
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Instant
 
 class ModelTest {
     private val json = Json { ignoreUnknownKeys = true }
@@ -52,6 +57,30 @@ class ModelTest {
         assertEquals(patch, json.decodeFromString<PatchedUser>(json.encodeToString(patch)))
         patch.resetPatchableFields()
         assertEquals("{}", json.encodeToString(patch))
+    }
+
+    @Test
+    fun requiredBooleanDefaultsAreEncodedWhileOptionalFieldsRemainOmitted() {
+        val instant = Instant.parse("2026-09-22T12:00:00Z")
+        val matrix =
+            PrimitiveMatrix(
+                uuid = "matrix-1",
+                createdAt = instant,
+                businessDate = LocalDate.parse("2026-09-22"),
+                businessTime = LocalTime.parse("12:00:00"),
+                payload = byteArrayOf(),
+                metadata = emptyMap(),
+                aliases = emptyList(),
+                steps = emptyList(),
+                audit = AuditStamp(createdBy = "owner-1", createdAt = instant),
+                related = emptyList(),
+                externalWindow = DateInterval(start = "2026-09-22", end = "2026-09-23"),
+            )
+
+        val wire = json.parseToJsonElement(json.encodeToString(matrix)).jsonObject
+        assertEquals("true", wire["enabled"]?.toString())
+        assertEquals("false", wire["archived"]?.toString())
+        assertFalse(wire.containsKey("callback_url"))
     }
 
     @Test

@@ -16,4 +16,16 @@ struct ApiModelPropertyHelperTests {
         #expect(!property.publishedAsField)
         #expect(property.dataType == .url(nil))
     }
+
+    @Test func `omittable presence is distinct from nullable optional presence`() {
+        let nullable = ApiModelProperty.string("name").optional
+        let omittable = ApiModelProperty.string("name").omittable
+
+        #expect(nullable.presence == .optionalNullable)
+        #expect(omittable.presence == .optionalNonNullable)
+        #expect(!omittable.required)
+        #expect(omittable.unpublished.presence == .optionalNonNullable)
+        #expect(omittable.mandatory.presence == .required)
+        #expect(ApiTypeSchema.object(typeName: "Example", properties: [nullable]) != ApiTypeSchema.object(typeName: "Example", properties: [omittable]))
+    }
 }

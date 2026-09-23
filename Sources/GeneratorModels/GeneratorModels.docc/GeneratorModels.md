@@ -37,6 +37,8 @@ Register generated types in a definition, module, or package's `references`. Use
 
 URL properties are required by default like other property helpers. Use `.optional` for nullable URLs. The generator has no field-selection query helpers; `.unpublished` independently controls whether a model property is emitted.
 
+Use `.omittable` when a property may be absent on the wire but an explicit `null` is invalid. `.optional` continues to allow both omission and `null`.
+
 ## Topics
 
 ### Collection Builders
