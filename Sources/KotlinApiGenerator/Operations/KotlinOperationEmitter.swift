@@ -381,7 +381,14 @@ struct KotlinOperationEmitter {
     }
 
     private func apiRequestConvertible() -> String {
-        let body = operation.request.hasBody ? "body" : "null"
+        let body: String
+        if case let .multiPart(parts) = operation.request, !operation.optionalMultipartParts.isEmpty {
+            let required = parts.filter { !operation.optionalMultipartParts.contains($0) }
+            let checks = required.map { "require(body.parts.containsKey(\($0.kotlinStringLiteral)))" }
+            body = checks.isEmpty ? "body" : "body.also { \(checks.joined(separator: "; ")) }"
+        } else {
+            body = operation.request.hasBody ? "body" : "null"
+        }
         let bodyType = operation.request.bodyTypeExpression(options: options)
         let contentType = operation.request.hasBody ? operation.request.mimeType.map(\.kotlinStringLiteral) ?? "null" : "null"
         return Block {

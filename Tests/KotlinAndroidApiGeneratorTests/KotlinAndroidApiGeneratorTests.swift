@@ -894,6 +894,22 @@ import Testing
         #expect(runtime.contents.contains("body.parts.toList() + body.additionalParts"))
     }
 
+    @Test func `OkHttp multipart request checks only nonoptional parts`() throws {
+        let operation = ApiOperation.postMultipart(
+            name: "feedback",
+            path: .relative("/feedback"),
+            security: .unsecured,
+            multiParts: ["answers", "files"],
+        ).withOptionalMultipartParts(["files"])
+        let files = try KotlinAndroidApiPackageGenerator(package: testPackage(operations: [operation], references: [])).generatedFiles()
+        let request = try #require(files.first {
+            $0.relativePath == "generated-api/src/main/kotlin/com/example/api/admin/users/FeedbackOperation.kt"
+        }?.contents)
+
+        #expect(request.contains("require(body.parts.containsKey(\"answers\"))"))
+        #expect(!request.contains("require(body.parts.containsKey(\"files\"))"))
+    }
+
     @Test func `multipart part list must not be empty`() {
         let operation = ApiOperation.postMultipart(
             name: "upload",

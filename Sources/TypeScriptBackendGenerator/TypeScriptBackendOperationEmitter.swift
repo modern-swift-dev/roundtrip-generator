@@ -63,7 +63,7 @@ struct TypeScriptBackendOperationEmitter {
         guard case let .multiPart(parts) = operation.request else {
             return ""
         }
-        let requiredParts = parts.map(\.backendStringLiteral).joined(separator: ", ")
+        let requiredParts = parts.filter { !operation.optionalMultipartParts.contains($0) }.map(\.backendStringLiteral).joined(separator: ", ")
         return """
         const \(multipartAdapterVariable)Factory = options?.multipart?.\(handlerName);
         if (!\(multipartAdapterVariable)Factory) { throw new Error(\("Missing multipart adapter for \(handlerName)".backendStringLiteral)); }
@@ -524,15 +524,15 @@ struct TypeScriptBackendOperationEmitter {
         guard case let .multiPart(parts) = operation.request else {
             return "never"
         }
-        let requiredParts = parts.map(\.backendStringLiteral).joined(separator: " | ")
-        return "GeneratedMultipartBody<GeneratedMultipartAdapterPart<Multipart[\"\(handlerName)\"]>, \(requiredParts)>"
+        let requiredParts = parts.filter { !operation.optionalMultipartParts.contains($0) }.map(\.backendStringLiteral).joined(separator: " | ")
+        return "GeneratedMultipartBody<GeneratedMultipartAdapterPart<Multipart[\"\(handlerName)\"]>, \(requiredParts.isEmpty ? "never" : requiredParts)>"
     }
 
     private func multipartBodyExpression() -> String {
         guard case let .multiPart(parts) = operation.request else {
             return "undefined"
         }
-        let required = parts.map { part in
+        let required = parts.filter { !operation.optionalMultipartParts.contains($0) }.map { part in
             "\(part.backendStringLiteral): generatedRequiredMultipartPart(multipartParts, \(part.backendStringLiteral))"
         }
         .joined(separator: ",\n")

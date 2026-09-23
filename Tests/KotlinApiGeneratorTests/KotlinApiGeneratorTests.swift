@@ -1507,6 +1507,22 @@ import Testing
         #expect(runtime.contents.contains("val parts: Map<String, Part> = emptyMap()"))
     }
 
+    @Test func `Ktor multipart request checks only nonoptional parts`() throws {
+        let operation = ApiOperation.postMultipart(
+            name: "feedback",
+            path: .relative("/feedback"),
+            security: .unsecured,
+            multiParts: ["answers", "files"],
+        ).withOptionalMultipartParts(["files"])
+        let files = try KotlinApiPackageGenerator(package: testPackage(operations: [operation], references: [])).generatedFiles()
+        let request = try #require(files.first {
+            $0.relativePath == "generated-api/src/commonMain/kotlin/com/example/api/admin/users/FeedbackOperation.kt"
+        }?.contents)
+
+        #expect(request.contains("require(body.parts.containsKey(\"answers\"))"))
+        #expect(!request.contains("require(body.parts.containsKey(\"files\"))"))
+    }
+
     @Test func `multipart requests append repeated same-name parts in Ktor`() throws {
         let operation = ApiOperation.postMultipart(
             name: "uploadReceipts",

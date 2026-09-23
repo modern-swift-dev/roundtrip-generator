@@ -611,6 +611,7 @@ struct ApiOperationGenerator {
             return ""
         }
         return parts
+            .filter { !operation.optionalMultipartParts.contains($0) }
             .map { "guard body[\($0.debugDescription)] != nil else { throw ApiError.requestEncodingFailed }" }
             .joined(separator: "\n")
     }

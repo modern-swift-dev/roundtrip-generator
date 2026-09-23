@@ -194,6 +194,32 @@ import Testing
         #expect(metadata.contains("type: \"string\""))
     }
 
+    @Test func `generated yaml leaves optional repeated files out of required multipart parts`() throws {
+        let operation = ApiOperation.postMultipart(
+            name: "feedback",
+            path: .relative("/feedback"),
+            security: .unsecured,
+            multiParts: ["answers", "files"],
+        ).withRepeatedMultipartParts(["files"])
+            .withOptionalMultipartParts(["files"])
+            .withTextMultipartParts(["answers"])
+        let package = ApiPackage(
+            name: "Feedback",
+            targetDirUrl: URL(fileURLWithPath: "/unused"),
+            modules: [ApiModule(name: "Feedback", definitions: [ApiService(name: "Feedback", operations: [operation])])],
+        )
+
+        let yaml = try OpenApiYamlPackageGenerator(package: package).generatedFile().contents
+        let required = try #require(yaml.components(separatedBy: "required:\n").dropFirst().first?.components(separatedBy: "responses:").first)
+        #expect(required.contains("- \"answers\""))
+        #expect(!required.contains("- \"files\""))
+        let files = try #require(yaml.components(separatedBy: "files:\n").dropFirst().first?.components(separatedBy: "required:\n").first)
+        #expect(files.contains("type: \"array\""))
+        let answers = try #require(yaml.components(separatedBy: "answers:\n").dropFirst().first?.components(separatedBy: "files:\n").first)
+        #expect(answers.contains("type: \"string\""))
+        #expect(!answers.contains("format: \"binary\""))
+    }
+
     @Test func `generated yaml documents declared public errors and excludes client only paths`() throws {
         let success = ApiTypeSchema.object(typeName: "Success", properties: [.string("value")])
         let failure = ApiTypeSchema.object(typeName: "Failure", properties: [.string("code")])

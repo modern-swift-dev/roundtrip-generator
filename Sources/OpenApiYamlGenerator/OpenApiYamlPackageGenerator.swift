@@ -150,7 +150,14 @@ public struct OpenApiYamlPackageGenerator {
             }
         }
 
-        renderRequestBody(operation.request, repeatedMultipartParts: operation.repeatedMultipartParts, &yaml, context: context)
+        renderRequestBody(
+            operation.request,
+            repeatedMultipartParts: operation.repeatedMultipartParts,
+            optionalMultipartParts: operation.optionalMultipartParts,
+            textMultipartParts: operation.textMultipartParts,
+            &yaml,
+            context: context,
+        )
         yaml.map("responses") {
             for status in operation.acceptableStatuses.sorted() {
                 yaml.map(OpenApiYamlWriter.quotedKey("\(status)")) {
@@ -196,6 +203,8 @@ public struct OpenApiYamlPackageGenerator {
     private func renderRequestBody(
         _ request: ApiRequestBody,
         repeatedMultipartParts: Set<String>,
+        optionalMultipartParts: Set<String>,
+        textMultipartParts: Set<String>,
         _ yaml: inout OpenApiYamlWriter,
         context: OpenApiYamlRenderContext,
     ) {
@@ -240,16 +249,23 @@ public struct OpenApiYamlPackageGenerator {
                                                 yaml.scalar("type", "array")
                                                 yaml.map("items") {
                                                     yaml.scalar("type", "string")
-                                                    yaml.scalar("format", "binary")
+                                                    if !textMultipartParts.contains(part) {
+                                                        yaml.scalar("format", "binary")
+                                                    }
                                                 }
                                             } else {
                                                 yaml.scalar("type", "string")
-                                                yaml.scalar("format", "binary")
+                                                if !textMultipartParts.contains(part) {
+                                                    yaml.scalar("format", "binary")
+                                                }
                                             }
                                         }
                                     }
                                 }
-                                yaml.list("required", scalars: parts)
+                                let requiredParts = parts.filter { !optionalMultipartParts.contains($0) }
+                                if !requiredParts.isEmpty {
+                                    yaml.list("required", scalars: requiredParts)
+                                }
                             }
                         }
                     }

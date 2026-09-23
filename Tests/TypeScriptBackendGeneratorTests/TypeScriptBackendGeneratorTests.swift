@@ -256,6 +256,23 @@ struct TypeScriptBackendGeneratorTests {
         #expect(routes.contains("readonly parts: ReadonlyMap<string, readonly Part[]>"))
     }
 
+    @Test func generatedBackendRequiresOnlyNonoptionalMultipartParts() throws {
+        let operation = ApiOperation.postMultipart(
+            name: "feedback",
+            path: .relative("/feedback"),
+            security: .unsecured,
+            multiParts: ["answers", "files"],
+        ).withOptionalMultipartParts(["files"])
+
+        let files = try TypeScriptBackendApiPackageGenerator(package: testPackage(operation: operation)).generatedFiles()
+        let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+
+        #expect(routes.contains("requiredParts: [\"answers\"]"))
+        #expect(routes.contains("GeneratedMultipartBody<GeneratedMultipartAdapterPart<Multipart[\"adminUsersFeedback\"]>, \"answers\">"))
+        #expect(routes.contains("generatedRequiredMultipartPart(multipartParts, \"answers\")"))
+        #expect(!routes.contains("generatedRequiredMultipartPart(multipartParts, \"files\")"))
+    }
+
     @Test func generatedBackendRejectsInvalidMultipartPartNames() {
         for parts in [[], [""], ["file", "file"]] {
             let operation = ApiOperation.postMultipart(

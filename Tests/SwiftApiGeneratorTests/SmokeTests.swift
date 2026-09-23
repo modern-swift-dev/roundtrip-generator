@@ -1218,6 +1218,22 @@ import Testing
         #expect(output.contains("builder.addPart(name: name, part: part)"))
     }
 
+    @Test func `multipart requests require only nonoptional parts before encoding`() {
+        let operation = ApiOperation.postMultipart(
+            name: "feedback",
+            path: .relative("/feedback"),
+            security: .unsecured,
+            multiParts: ["answers", "files"],
+        ).withOptionalMultipartParts(["files"])
+
+        let output = ApiOperationGenerator(operation: operation)
+            .swiftCode(parentClassName: "", imports: [])
+            .toString()
+
+        #expect(output.contains("guard body[\"answers\"] != nil else"))
+        #expect(!output.contains("guard body[\"files\"] != nil else"))
+    }
+
     @Test func `swift request accessors avoid parameter local shadowing`() {
         let operation = ApiOperation.postMultipart(
             name: "upload",

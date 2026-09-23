@@ -50,6 +50,12 @@ public struct ApiOperation: Sendable {
     /// Multipart names represented as arrays of files in generated API descriptions.
     public let repeatedMultipartParts: Set<String>
 
+    /// Multipart names that may be omitted from a request. All others remain required.
+    public let optionalMultipartParts: Set<String>
+
+    /// Multipart names whose wire content is text rather than binary.
+    public let textMultipartParts: Set<String>
+
     /// The response type
     public let response: ApiResponseBody
 
@@ -83,6 +89,8 @@ public struct ApiOperation: Sendable {
         parameters: [ApiParameter],
         request: ApiRequestBody,
         repeatedMultipartParts: Set<String> = [],
+        optionalMultipartParts: Set<String> = [],
+        textMultipartParts: Set<String> = [],
         response: ApiResponseBody,
         acceptableStatuses: [Int],
         successResponses: [ApiSuccessResponse] = [],
@@ -95,6 +103,8 @@ public struct ApiOperation: Sendable {
         self.parameters = parameters
         self.request = request
         self.repeatedMultipartParts = repeatedMultipartParts
+        self.optionalMultipartParts = optionalMultipartParts
+        self.textMultipartParts = textMultipartParts
         self.response = response
         self.acceptableStatuses = acceptableStatuses
         self.successResponses = successResponses
@@ -121,6 +131,8 @@ public extension ApiOperation {
             parameters: self.parameters + parameters,
             request: request,
             repeatedMultipartParts: repeatedMultipartParts,
+            optionalMultipartParts: optionalMultipartParts,
+            textMultipartParts: textMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
             successResponses: successResponses,
@@ -158,6 +170,8 @@ public extension ApiOperation {
             parameters: parameters,
             request: adaptedRequest,
             repeatedMultipartParts: repeatedMultipartParts,
+            optionalMultipartParts: optionalMultipartParts,
+            textMultipartParts: textMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
             successResponses: successResponses,
@@ -193,6 +207,8 @@ public extension ApiOperation {
             parameters: parameters,
             request: request,
             repeatedMultipartParts: repeatedMultipartParts,
+            optionalMultipartParts: optionalMultipartParts,
+            textMultipartParts: textMultipartParts,
             response: adaptedResponse,
             acceptableStatuses: acceptableStatuses,
             successResponses: successResponses,
@@ -215,6 +231,8 @@ public extension ApiOperation {
             parameters: parameters,
             request: request,
             repeatedMultipartParts: repeatedMultipartParts,
+            optionalMultipartParts: optionalMultipartParts,
+            textMultipartParts: textMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
             successResponses: successResponses,
@@ -235,6 +253,8 @@ public extension ApiOperation {
             parameters: parameters,
             request: request,
             repeatedMultipartParts: repeatedMultipartParts,
+            optionalMultipartParts: optionalMultipartParts,
+            textMultipartParts: textMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
             successResponses: successResponses,
@@ -253,6 +273,8 @@ public extension ApiOperation {
             parameters: parameters,
             request: request,
             repeatedMultipartParts: repeatedMultipartParts,
+            optionalMultipartParts: optionalMultipartParts,
+            textMultipartParts: textMultipartParts,
             response: self.response,
             acceptableStatuses: acceptableStatuses,
             successResponses: successResponses + [.init(status: status, response: response, requiredHeaders: requiredHeaders)],
@@ -271,6 +293,48 @@ public extension ApiOperation {
             parameters: parameters,
             request: request,
             repeatedMultipartParts: names,
+            optionalMultipartParts: optionalMultipartParts,
+            textMultipartParts: textMultipartParts,
+            response: response,
+            acceptableStatuses: acceptableStatuses,
+            successResponses: successResponses,
+            publicErrors: publicErrors,
+            extraImports: extraImports,
+        )
+    }
+
+    /// Marks declared multipart names that may be omitted from a request.
+    func withOptionalMultipartParts(_ names: Set<String>) -> ApiOperation {
+        .init(
+            name: name,
+            method: method,
+            path: path,
+            security: security,
+            parameters: parameters,
+            request: request,
+            repeatedMultipartParts: repeatedMultipartParts,
+            optionalMultipartParts: names,
+            textMultipartParts: textMultipartParts,
+            response: response,
+            acceptableStatuses: acceptableStatuses,
+            successResponses: successResponses,
+            publicErrors: publicErrors,
+            extraImports: extraImports,
+        )
+    }
+
+    /// Marks declared multipart names whose wire content is text rather than binary.
+    func withTextMultipartParts(_ names: Set<String>) -> ApiOperation {
+        .init(
+            name: name,
+            method: method,
+            path: path,
+            security: security,
+            parameters: parameters,
+            request: request,
+            repeatedMultipartParts: repeatedMultipartParts,
+            optionalMultipartParts: optionalMultipartParts,
+            textMultipartParts: names,
             response: response,
             acceptableStatuses: acceptableStatuses,
             successResponses: successResponses,
