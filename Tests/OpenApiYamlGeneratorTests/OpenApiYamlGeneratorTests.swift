@@ -71,7 +71,7 @@ import Testing
             ))
     }
 
-    @Test func `optional model properties are nullable`() throws {
+    @Test func `optional model properties accept explicit null in OpenAPI 3.1`() throws {
         let profile = ApiTypeSchema.object(typeName: "Profile", properties: [
             .string("name").optional
         ])
@@ -79,7 +79,8 @@ import Testing
 
         let yaml = try OpenApiYamlPackageGenerator(package: package).generatedFile().contents
 
-        #expect(yaml.contains("name:\n          type: \"string\"\n          nullable: true"))
+        #expect(yaml.contains("name:\n          anyOf:\n            -\n              type: \"string\"\n            -\n              type: \"null\""))
+        #expect(!yaml.contains("nullable:"))
         #expect(!yaml.contains("required:\n        - \"name\""))
     }
 
@@ -92,8 +93,37 @@ import Testing
 
         let yaml = try OpenApiYamlPackageGenerator(package: package).generatedFile().contents
 
-        #expect(yaml.contains("name:\n          type: \"string\"\n        nickname:\n          type: \"string\"\n          nullable: true"))
+        #expect(yaml.contains("name:\n          type: \"string\"\n        nickname:\n          anyOf:\n            -\n              type: \"string\"\n            -\n              type: \"null\""))
         #expect(!yaml.contains("required:\n        - \"name\""))
+    }
+
+    @Test func `patchable fields document their underlying wire values`() throws {
+        let coordinates = ApiTypeSchema.object(typeName: "Coordinates", properties: [.double("lat")])
+        let profile = ApiTypeSchema.object(typeName: "ProfilePatch", properties: [
+            .init(rawName: "name", propertyName: "name", dataType: .genericReference(typeName: "PatchableValue", genericTypes: [.string()]), required: false),
+            .init(rawName: "coordinates", propertyName: "coordinates", dataType: .genericReference(typeName: "PatchableValue", genericTypes: [coordinates.asRef]), required: false),
+            .init(rawName: "tags", propertyName: "tags", dataType: .genericReference(typeName: "PatchableValue", genericTypes: [.array(.string())]), required: false)
+        ])
+        let package = ApiPackage(name: "Patch", targetDirUrl: URL(fileURLWithPath: "/unused"), modules: [], references: [profile])
+
+        let yaml = try OpenApiYamlPackageGenerator(package: package).generatedFile().contents
+
+        #expect(yaml.contains("name:\n          anyOf:\n            -\n              type: \"string\"\n            -\n              type: \"null\""))
+        #expect(yaml.contains("coordinates:\n          anyOf:\n            -\n              $ref: \"#/components/schemas/Coordinates\"\n            -\n              type: \"null\""))
+        #expect(yaml.contains("tags:\n          anyOf:\n            -\n              type: \"array\""))
+        #expect(!yaml.contains("PatchableValueValue:"))
+        #expect(!yaml.contains("PatchableValueCoordinates:"))
+    }
+
+    @Test func `optional dictionary values accept explicit null`() throws {
+        let requirements = ApiTypeSchema.object(typeName: "Requirements", properties: [
+            .keyedByString("answers", valueType: .string(), valueOptional: true)
+        ])
+        let package = ApiPackage(name: "OptionalValues", targetDirUrl: URL(fileURLWithPath: "/unused"), modules: [], references: [requirements])
+
+        let yaml = try OpenApiYamlPackageGenerator(package: package).generatedFile().contents
+
+        #expect(yaml.contains("additionalProperties:\n            anyOf:\n              -\n                type: \"string\"\n              -\n                type: \"null\""))
     }
 
     @Test func `generated yaml excludes runtime paths and includes multipart binary cookie and external references`() throws {

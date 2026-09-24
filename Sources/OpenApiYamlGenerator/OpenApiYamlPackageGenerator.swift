@@ -322,6 +322,10 @@ public struct OpenApiYamlPackageGenerator {
     }
 
     private func renderSchema(_ dataType: ApiTypeSchema, _ yaml: inout OpenApiYamlWriter, context: inout OpenApiYamlRenderContext) {
+        if let valueType = dataType.openApiPatchableValueType {
+            renderSchema(valueType, &yaml, context: &context)
+            return
+        }
         switch dataType {
             case .uuid:
                 yaml.scalar("type", "string")
@@ -419,10 +423,21 @@ public struct OpenApiYamlPackageGenerator {
             case .binary:
                 yaml.scalar("type", "string")
                 yaml.scalar("format", "binary")
-            case let .keyedByString(type, _):
+            case let .keyedByString(type, isOptional):
                 yaml.scalar("type", "object")
                 yaml.map("additionalProperties") {
-                    renderSchema(type, &yaml, context: &context)
+                    if isOptional {
+                        yaml.list("anyOf") {
+                            yaml.mapItem {
+                                renderSchema(type, &yaml, context: &context)
+                            }
+                            yaml.mapItem {
+                                yaml.scalar("type", "null")
+                            }
+                        }
+                    } else {
+                        renderSchema(type, &yaml, context: &context)
+                    }
                 }
             case let .stringEnum(_, values, initialValue, _, supportGarbage):
                 yaml.scalar("type", "string")
@@ -493,13 +508,23 @@ public struct OpenApiYamlPackageGenerator {
             yaml.map("properties") {
                 for property in published {
                     yaml.map(OpenApiYamlWriter.quotedKey(property.rawName)) {
-                        renderSchema(property.dataType, &yaml, context: &context)
-                        // Nullable optional fields may be omitted or explicitly cleared with null.
                         if property.presence == .optionalNullable {
-                            yaml.scalar("nullable", true)
-                        }
-                        if case let .booleanLiteral(value) = property.constraint {
-                            yaml.list("enum", scalars: [value])
+                            yaml.list("anyOf") {
+                                yaml.mapItem {
+                                    renderSchema(property.dataType, &yaml, context: &context)
+                                    if case let .booleanLiteral(value) = property.constraint {
+                                        yaml.list("enum", scalars: [value])
+                                    }
+                                }
+                                yaml.mapItem {
+                                    yaml.scalar("type", "null")
+                                }
+                            }
+                        } else {
+                            renderSchema(property.dataType, &yaml, context: &context)
+                            if case let .booleanLiteral(value) = property.constraint {
+                                yaml.list("enum", scalars: [value])
+                            }
                         }
                     }
                 }
@@ -739,6 +764,10 @@ private struct OpenApiYamlRenderContext {
     private var visitedTypeIDs: Set<UUID> = []
 
     mutating func register(_ dataType: ApiTypeSchema) {
+        if let valueType = dataType.openApiPatchableValueType {
+            registerUsed(type: valueType)
+            return
+        }
         if let name = declaredSchemaName(for: dataType) {
             register(dataType, name: name)
         } else {
@@ -747,6 +776,10 @@ private struct OpenApiYamlRenderContext {
     }
 
     mutating func registerUsed(type dataType: ApiTypeSchema) {
+        if let valueType = dataType.openApiPatchableValueType {
+            registerUsed(type: valueType)
+            return
+        }
         switch dataType {
             case let .reference(typeName, _, _, _, nested):
                 if let nested {
@@ -806,6 +839,10 @@ private struct OpenApiYamlRenderContext {
     }
 
     private mutating func registerNested(in dataType: ApiTypeSchema) {
+        if let valueType = dataType.openApiPatchableValueType {
+            registerUsed(type: valueType)
+            return
+        }
         if let id = dataType.uuid, !visitedTypeIDs.insert(id).inserted {
             return
         }
@@ -973,6 +1010,16 @@ private final class OpenApiYamlWriter {
             .replacingOccurrences(of: #"\"#, with: #"\\"#)
             .replacingOccurrences(of: #"""#, with: #"\""#)
         return "\"\(escaped)\""
+    }
+}
+
+private extension ApiTypeSchema {
+    var openApiPatchableValueType: ApiTypeSchema? {
+        guard case let .genericReference(typeName, types) = self,
+              typeName == "PatchableValue", types.count == 1 else {
+            return nil
+        }
+        return types.first
     }
 }
 
