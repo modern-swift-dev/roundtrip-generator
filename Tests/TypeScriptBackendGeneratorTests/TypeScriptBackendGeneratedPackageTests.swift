@@ -2093,3 +2093,150 @@ struct TypeScriptBackendGeneratedPackageTests {
         """
     }
 }
+
+extension TypeScriptBackendGeneratedPackageTests {
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
+    func generatedErrorBoundaryAndOperationMiddleware() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let payload = ApiTypeSchema.object(typeName: "Payload", properties: [.string("value")])
+        let failure = ApiTypeSchema.object(typeName: "Failure", properties: [.string("code")])
+        let errors = [400, 401, 409, 413].map { ApiPublicError(status: $0, response: .json(failure.asRef)) }
+            + [ApiPublicError(status: 408, response: .none)]
+        let operations = ["run", "absent"].map { name in
+            ApiOperation.post(name: name, path: .relative("/\(name)"), security: .secured, request: payload.asRef, response: payload.asRef, publicErrors: errors)
+        }
+        let package = ApiPackage(name: "Boundary", targetDirUrl: root, modules: [
+            ApiModule(name: "Test", definitions: [ApiService(name: "Boundary", operations: operations, references: [payload, failure])])
+        ])
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for file in try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles() {
+            try file.write(to: root)
+        }
+        try """
+        import type { GeneratedMappedError, GeneratedRouteOptions } from './generated/routes.js';
+        const mapped: GeneratedMappedError = {status: 409, value: {code: 'failure'}};
+        const options: GeneratedRouteOptions = {
+            mapError: () => mapped,
+            operationMiddleware: {
+                testBoundaryRun: [],
+                // @ts-expect-error operation names are generated, not arbitrary strings
+                missingOperation: [],
+            },
+        };
+        void options;
+        """.write(to: root.appendingPathComponent("src/fixture.ts"), atomically: true, encoding: .utf8)
+        try """
+        import assert from 'node:assert/strict';
+        import express from 'express';
+        import {registerGeneratedRoutes} from './dist/generated/routes.js';
+        import {GeneratedValidationError, generatedResponse} from './dist/generated/runtime.js';
+        const app = express();
+        let order = [];
+        let mappedCount = 0;
+        const fail = (status, code = 'FAIL') => ({status, value: {code, secret: 'must-not-escape'}, headers: {'x-error': 'yes'}});
+        registerGeneratedRoutes(app, {
+            testBoundaryRun: async (input, context) => {
+                order.push('handler');
+                switch (context.mode) {
+                    case 'handler': throw fail(409);
+                    case 'bodyless': throw fail(408);
+                    case 'undeclared': throw fail(418);
+                    case 'unmapped': throw new Error('private');
+                    case 'bad-mapped': throw {status: 409, value: {wrong: 'private'}, headers: {'x-private': 'private'}};
+                    case 'mapper-throws': throw {mapperThrows: true};
+                    case 'bad-output': return {wrong: 'private'};
+                    case 'returned': return generatedResponse(fail(409).value, {status: 409});
+                    default: return input.body;
+                }
+            },
+        }, {}, {
+            integration: {secured: {
+                middleware: [(req, res, next) => {
+                    order.push('policy');
+                    if (req.query.mode === 'auth') return next(fail(401));
+                    if (req.query.mode === 'short') return res.status(204).end();
+                    next();
+                }],
+                context(req) {
+                    order.push('context');
+                    if (req.query.mode === 'context') throw fail(409);
+                    return {mode: req.query.mode};
+                },
+            }},
+            operationMiddleware: {
+                testBoundaryRun: [(req, res, next) => {
+                    order.push('operation');
+                    if (req.query.mode === 'middleware') return next(fail(409));
+                    next();
+                }],
+                testBoundaryAbsent: [() => { throw new Error('must never register'); }],
+            },
+            jsonBodyParser(req, res, next) {
+                order.push('parser');
+                express.raw({type: 'application/json', limit: 128})(req, res, next);
+            },
+            mapError(error) {
+                mappedCount++;
+                if (error.mapperThrows) throw fail(418);
+                if (error instanceof GeneratedValidationError) return fail(400, 'INPUT');
+                if (error.type === 'entity.too.large') return fail(413, 'SIZE');
+                return error.status ? error : undefined;
+            },
+        });
+        app.use((error, req, res, next) => {
+            // Deliberately mirrors hosts that otherwise trust an HttpError status.
+            res.status(error.status ?? 500).json({code: 'SANITIZED'});
+        });
+        const server = app.listen(0);
+        await new Promise(resolve => server.once('listening', resolve));
+        try {
+            const base = `http://127.0.0.1:${server.address().port}`;
+            const call = (mode, body = '{"value":"ok"}', path = '/run') => fetch(`${base}${path}?mode=${mode}`, {
+                method: 'POST', headers: {'content-type': 'application/json', Authorization: 'token'}, body,
+            });
+            const success = await call('ok');
+            assert.equal(success.status, 200);
+            assert.deepEqual(await success.json(), {value: 'ok'});
+            assert.deepEqual(order, ['policy', 'operation', 'context', 'parser', 'handler']);
+            for (const [mode, status, expectedOrder] of [
+                ['auth', 401, ['policy']],
+                ['middleware', 409, ['policy', 'operation']],
+                ['context', 409, ['policy', 'operation', 'context']],
+                ['handler', 409, ['policy', 'operation', 'context', 'parser', 'handler']],
+            ]) {
+                order = [];
+                const response = await call(mode);
+                assert.equal(response.status, status, mode);
+                assert.deepEqual(await response.json(), {code: 'FAIL'});
+                assert.equal(response.headers.get('x-error'), 'yes');
+                assert.deepEqual(order, expectedOrder);
+            }
+            assert.equal((await call('short')).status, 204);
+            const bodyless = await call('bodyless');
+            assert.equal(bodyless.status, 408);
+            assert.equal(await bodyless.text(), '');
+            assert.equal(bodyless.headers.get('content-type'), null);
+            assert.deepEqual(await (await call('returned')).json(), {code: 'FAIL'});
+            for (const mode of ['undeclared', 'unmapped', 'bad-mapped', 'mapper-throws', 'bad-output']) {
+                const before = mappedCount;
+                const response = await call(mode);
+                assert.equal(response.status, 500, mode);
+                assert.deepEqual(await response.json(), {code: 'SANITIZED'});
+                assert.equal(response.headers.get('x-private'), null);
+                if (mode === 'bad-output') assert.equal(mappedCount, before);
+            }
+            assert.equal((await call('ok', '{')).status, 400);
+            assert.equal((await call('ok', JSON.stringify({value: 'x'.repeat(200)}))).status, 413);
+            order = [];
+            assert.equal((await call('ok', '{}', '/absent')).status, 404);
+            assert.deepEqual(order, []);
+        } finally {
+            await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+        }
+        """.write(to: root.appendingPathComponent("test.mjs"), atomically: true, encoding: .utf8)
+        try run(["install", "--ignore-scripts", "--package-lock=false"], in: root)
+        try run(["run", "build"], in: root)
+        try run(["exec", "--", "node", "test.mjs"], in: root)
+    }
+}

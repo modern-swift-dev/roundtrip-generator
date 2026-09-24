@@ -29,7 +29,15 @@ public struct ApiSuccessResponse: Sendable {
     }
 }
 
+public enum ApiOperationAudience: Sendable {
+    case all
+    case backendOnly
+}
+
 public struct ApiOperation: Sendable {
+    /// Controls whether client targets expose this operation.
+    public private(set) var audience: ApiOperationAudience
+
     /// The name of the operation
     ///
     /// > This is used to derive the name of the method in Swift
@@ -109,7 +117,9 @@ public struct ApiOperation: Sendable {
         successResponses: [ApiSuccessResponse] = [],
         publicErrors: [ApiPublicError] = [],
         extraImports: [ApiImport],
+        audience: ApiOperationAudience = .all,
     ) {
+        self.audience = audience
         self.name = name
         self.method = method
         self.path = path
@@ -132,6 +142,13 @@ public struct ApiOperation: Sendable {
 // MARK: - Extending Sugar Syntax
 
 public extension ApiOperation {
+    /// Retains this operation in backend and OpenAPI targets, excluding client targets.
+    func backendOnly() -> ApiOperation {
+        var copy = self
+        copy.audience = .backendOnly
+        return copy
+    }
+
     /// A utility method allowing to get a copy of an existing operation with appended array of `ApiParameter`
     /// - parameter parameters: The list of api parameter to add
     /// - returns: The copied operation
@@ -155,6 +172,7 @@ public extension ApiOperation {
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
+            audience: audience,
         )
     }
 
@@ -196,6 +214,7 @@ public extension ApiOperation {
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
+            audience: audience,
         )
     }
 
@@ -235,6 +254,7 @@ public extension ApiOperation {
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
+            audience: audience,
         )
     }
 
@@ -261,6 +281,7 @@ public extension ApiOperation {
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
+            audience: audience,
         )
     }
 
@@ -285,6 +306,7 @@ public extension ApiOperation {
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports + extras,
+            audience: audience,
         )
     }
 
@@ -307,6 +329,7 @@ public extension ApiOperation {
             successResponses: successResponses + [.init(status: status, response: response, requiredHeaders: requiredHeaders)],
             publicErrors: publicErrors,
             extraImports: extraImports,
+            audience: audience,
         )
     }
 
@@ -329,6 +352,7 @@ public extension ApiOperation {
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
+            audience: audience,
         )
     }
 
@@ -351,6 +375,7 @@ public extension ApiOperation {
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
+            audience: audience,
         )
     }
 
@@ -373,6 +398,7 @@ public extension ApiOperation {
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
+            audience: audience,
         )
     }
 
@@ -395,6 +421,7 @@ public extension ApiOperation {
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
+            audience: audience,
         )
     }
 
@@ -417,6 +444,7 @@ public extension ApiOperation {
             successResponses: successResponses,
             publicErrors: publicErrors,
             extraImports: extraImports,
+            audience: audience,
         )
     }
 }

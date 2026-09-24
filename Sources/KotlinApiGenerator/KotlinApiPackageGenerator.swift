@@ -42,7 +42,7 @@ public struct KotlinApiPackageGenerator {
     private var declaredTypePackagesByID: [UUID: String] = [:]
 
     public init(package: ApiPackage, options: KotlinGeneratorOptions = .init()) {
-        self.package = package
+        self.package = package.clientAudiencePackage
         self.options = options
         declaredTypePackagesByID = makeDeclaredTypePackagesByID()
     }

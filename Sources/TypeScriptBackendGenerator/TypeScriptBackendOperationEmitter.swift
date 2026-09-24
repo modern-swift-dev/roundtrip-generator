@@ -105,6 +105,7 @@ struct TypeScriptBackendOperationEmitter {
         \(schemaBindingValidation().prepad(4))
         \(policyValidation.prepad(4))
         \(multipartAdapterRegistrationSource().prepad(4))
+        \(publicErrorSerializerSource().prepad(4))
         \(routeSource(handlerVariable: handlerVariable).prepad(4))
         }
         """
@@ -116,6 +117,7 @@ struct TypeScriptBackendOperationEmitter {
         let status = operation.acceptableStatuses.first ?? 200
         let routeMiddleware = [
             "...(options?.integration?.\(requestPolicy.rawValue)?.middleware ?? [])",
+            "...(options?.operationMiddleware?.\(handlerName) ?? [])",
             "generatedRequestContextMiddleware(options?.integration?.\(requestPolicy.rawValue))",
             isMultipart ? "...\(multipartAdapterVariable).middleware" : nil,
             requestParser()
@@ -124,7 +126,7 @@ struct TypeScriptBackendOperationEmitter {
         .map { ", \($0)" }
         .joined()
         return """
-            app.\(method)(\(path.backendStringLiteral)\(routeMiddleware), async (request, response, next) => {
+            app.\(method)(\(path.backendStringLiteral)\(routeMiddleware), async (request: Request, response: Response, next: NextFunction) => {
             \(applicationRequestPreparation().prepad(4))
                 let decodedInput: \(handlerRequestType());
                 try {
@@ -154,7 +156,68 @@ struct TypeScriptBackendOperationEmitter {
                 } catch (error) {
                     next(error);
                 }
-            });
+            }, \(errorMiddlewareSource()));
+        """
+    }
+
+    private func publicErrorSerializerSource() -> String {
+        let cases = operation.publicErrors.map { error in
+            """
+            if (output.status === \(error.status)) {
+            \(responseHandling(for: error.response, usesOutputBinding: false).replacingOccurrences(of: "return;", with: "return true;").prepad(4))
+                return true;
+            }
+            """
+        }.joined(separator: "\n")
+        return """
+        const sendPublicError_\(handlerName) = (output: GeneratedResponse<unknown>, response: Response): boolean => {
+        \(cases.prepad(4))
+            return false;
+        };
+        """
+    }
+
+    private func errorMiddlewareSource() -> String {
+        let bodyless = operation.publicErrors.filter {
+            if case .none = $0.response {
+                true
+            } else {
+                false
+            }
+        }.map(\.status)
+        let bodylessCondition = bodyless.isEmpty ? "false" : "[\(bodyless.map(String.init).joined(separator: ", "))].includes(mapped.status)"
+        return """
+        async (error: unknown, _request: Request, response: Response, next: NextFunction) => {
+            if (response.headersSent || response.writableEnded) {
+                next(error);
+                return;
+            }
+            if (error instanceof GeneratedValidationError && error.phase === "output") {
+                next(error);
+                return;
+            }
+            if (!options?.mapError) {
+                next(error);
+                return;
+            }
+            try {
+                const mapped = await options.mapError(error);
+                if (!mapped) {
+                    throw new Error("Unmapped operation error");
+                }
+                const output = {
+                    kind: "generated-response" as const,
+                    status: mapped.status,
+                    headers: { ...mapped.headers },
+                    value: \(bodylessCondition) ? undefined : mapped.value,
+                };
+                if (!sendPublicError_\(handlerName)(output, response)) {
+                    throw new Error("Undeclared public error status");
+                }
+            } catch (failure) {
+                next(new GeneratedValidationError(\(operationIdentifier.backendStringLiteral), "output", failure));
+            }
+        }
         """
     }
 
@@ -255,14 +318,7 @@ struct TypeScriptBackendOperationEmitter {
     }
 
     private func responseHandling() -> String {
-        let publicErrorHandling = operation.publicErrors.map { error in
-            """
-            if (output.status === \(error.status)) {
-            \(responseHandling(for: error.response, usesOutputBinding: false).prepad(4))
-                return;
-            }
-            """
-        }.joined(separator: "\n")
+        let publicErrorHandling = "if (sendPublicError_\(handlerName)(output, response)) { return; }"
         let successHandling = operation.successResponses.map { success in
             """
             if (output.status === \(success.status)) {
@@ -633,7 +689,15 @@ struct TypeScriptBackendRoutesEmitter {
         let importedSymbols = importedDataTypes.flatMap { codecImports(for: $0) ?? [] }
             .uniqued()
             .sorted()
-        let generatedContent = [handlers, fields, routes]
+        let publicErrorBodies = operations.flatMap { $0.operation.publicErrors.map(\.response) }.map { response -> String in
+            switch response {
+                case let .json(type): type.map { models.typeDeclaration(for: $0) } ?? "undefined"
+                case .binary: "Uint8Array"
+                case .none: "undefined"
+            }
+        }.uniqued()
+        let publicErrorBodyType = publicErrorBodies.isEmpty ? "never" : publicErrorBodies.joined(separator: " | ")
+        let generatedContent = [handlers, fields, routes, publicErrorBodyType]
             .joined(separator: "\n")
         let imports = importedSymbols
             .filter { symbol in
@@ -658,7 +722,7 @@ struct TypeScriptBackendRoutesEmitter {
         return """
         // Generated code. Do not edit.
 
-        import express, { type Application, type Request, type RequestHandler, type Response } from "express";
+        import express, { type Application, type Request, type RequestHandler, type Response, type NextFunction } from "express";
         import { z } from "zod";
         import {
             \(runtimeImports)
@@ -728,7 +792,17 @@ struct TypeScriptBackendRoutesEmitter {
             return values as readonly [Part, ...Part[]];
         }
 
+        export type GeneratedPublicErrorBody = \(publicErrorBodyType);
+
+        export interface GeneratedMappedError {
+            readonly status: number;
+            readonly value?: GeneratedPublicErrorBody;
+            readonly headers?: Readonly<Record<string, string>>;
+        }
+
         export interface GeneratedRouteOptions<Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}> {
+            operationMiddleware?: Partial<Record<keyof GeneratedHandlers, readonly RequestHandler[]>>;
+            mapError?: (error: unknown) => GeneratedMaybePromise<GeneratedMappedError | undefined>;
             jsonBodyParser?: RequestHandler;
             rawBodyParser?: RequestHandler;
             integration?: Integration;

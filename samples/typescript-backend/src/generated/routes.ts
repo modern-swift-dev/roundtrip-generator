@@ -1,43 +1,20 @@
 // Generated code. Do not edit.
 
-import express, { type Express, type Request, type RequestHandler, type Response } from "express";
+import express, { type Application, type Request, type RequestHandler, type Response, type NextFunction } from "express";
 import { z } from "zod";
 import {
-    base64ToUint8Array,
-    isValidBase64,
-    isValidCalendarDate,
-    isValidISODate,
-    isValidLocalTime,
-    isValidURL,
-    isValidUUID,
     parseParameterArray,
-    parseParameterBigInt,
-    parseParameterBoolean,
-    parseParameterDate,
-    parseParameterDateTime,
-    parseParameterInteger,
-    parseParameterNarrowInteger,
     parseParameterString,
-    parseParameterTime,
-    parseDate,
-    parseDouble,
     parseJsonBody,
-    parseNarrowInteger,
-    parseURL,
     readRequestParameter,
     generatedResponseHasBody,
     normalizeGeneratedResponse,
-    serializeDate,
-    serializeURL,
     stringifyJsonResponse,
-    validateGeneratedResponseStatus,
-    uint8ArrayToBase64
+    validateGeneratedResponseStatus
 } from "./runtime.js";
 import { GeneratedValidationError, type GeneratedResponse } from "./runtime.js";
 import {
     decodeLedgerBatch,
-    decodePhotoReceipt,
-    decodeProfile,
     decodeProfilePatch,
     encodeLedgerBatch,
     encodePhotoReceipt,
@@ -48,6 +25,13 @@ import {
     type Profile,
     type ProfilePatch
 } from "./models.js";
+
+export type GeneratedOperationId =
+    | "Future.Profiles.GetProfile"
+    | "Future.Profiles.PatchProfile"
+    | "Future.Profiles.UploadProfilePhoto"
+    | "Future.Profiles.ProcessLedger"
+    | "Future.Profiles.RawReceipts";
 
 export type GeneratedSchemaBinding<Output = unknown, Input = unknown> = z.ZodType<Output, Input>;
 
@@ -107,7 +91,17 @@ function generatedRequiredMultipartPart<Part>(parts: ReadonlyMap<string, readonl
     return values as readonly [Part, ...Part[]];
 }
 
+export type GeneratedPublicErrorBody = never;
+
+export interface GeneratedMappedError {
+    readonly status: number;
+    readonly value?: GeneratedPublicErrorBody;
+    readonly headers?: Readonly<Record<string, string>>;
+}
+
 export interface GeneratedRouteOptions<Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}> {
+    operationMiddleware?: Partial<Record<keyof GeneratedHandlers, readonly RequestHandler[]>>;
+    mapError?: (error: unknown) => GeneratedMaybePromise<GeneratedMappedError | undefined>;
     jsonBodyParser?: RequestHandler;
     rawBodyParser?: RequestHandler;
     integration?: Integration;
@@ -164,13 +158,13 @@ export interface FutureProfilesGetProfileInput {
     fields?: string[];
     apiKey: string;
 }
-export type FutureProfilesGetProfileHandler<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}> = (input: GeneratedHandlerInput<Bindings["futureProfilesGetProfile"], FutureProfilesGetProfileInput>, context: GeneratedHandlerContext<Integration, "secured">) => GeneratedHandlerOutput<Bindings["futureProfilesGetProfile"], Profile>;
+export type FutureProfilesGetProfileHandler<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}> = (input: GeneratedHandlerInput<Bindings["futureProfilesGetProfile"], FutureProfilesGetProfileInput>, context: GeneratedHandlerContext<Integration, "secured">) => GeneratedHandlerOutput<Bindings["futureProfilesGetProfile"], Profile>;
 export interface FutureProfilesPatchProfileInput {
     profileId: string;
     apiKey: string;
     body: ProfilePatch;
 }
-export type FutureProfilesPatchProfileHandler<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}> = (input: GeneratedHandlerInput<Bindings["futureProfilesPatchProfile"], FutureProfilesPatchProfileInput>, context: GeneratedHandlerContext<Integration, "secured">) => GeneratedHandlerOutput<Bindings["futureProfilesPatchProfile"], ProfilePatch>;
+export type FutureProfilesPatchProfileHandler<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}> = (input: GeneratedHandlerInput<Bindings["futureProfilesPatchProfile"], FutureProfilesPatchProfileInput>, context: GeneratedHandlerContext<Integration, "secured">) => GeneratedHandlerOutput<Bindings["futureProfilesPatchProfile"], ProfilePatch>;
 export interface FutureProfilesUploadProfilePhotoInput<Multipart extends GeneratedMultipartAdapters = {}> {
     profileId: string;
     apiKey: string;
@@ -182,310 +176,518 @@ export interface FutureProfilesProcessLedgerInput {
     apiKey: string;
     body: LedgerBatch;
 }
-export type FutureProfilesProcessLedgerHandler<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}> = (input: GeneratedHandlerInput<Bindings["futureProfilesProcessLedger"], FutureProfilesProcessLedgerInput>, context: GeneratedHandlerContext<Integration, "secured">) => GeneratedHandlerOutput<Bindings["futureProfilesProcessLedger"], LedgerBatch>;
+export type FutureProfilesProcessLedgerHandler<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}> = (input: GeneratedHandlerInput<Bindings["futureProfilesProcessLedger"], FutureProfilesProcessLedgerInput>, context: GeneratedHandlerContext<Integration, "secured">) => GeneratedHandlerOutput<Bindings["futureProfilesProcessLedger"], LedgerBatch>;
 
-export type FutureProfilesRawReceiptsHandler<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}> = (input: GeneratedHandlerInput<Bindings["futureProfilesRawReceipts"], Uint8Array>, context: GeneratedHandlerContext<Integration, "unsecured">) => GeneratedHandlerOutput<Bindings["futureProfilesRawReceipts"], Uint8Array>;
+export type FutureProfilesRawReceiptsHandler<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}> = (input: GeneratedHandlerInput<Bindings["futureProfilesRawReceipts"], Uint8Array>, context: GeneratedHandlerContext<Integration, "unsecured">) => GeneratedHandlerOutput<Bindings["futureProfilesRawReceipts"], Uint8Array>;
 
 export interface GeneratedHandlers<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}> {
-    futureProfilesGetProfile: FutureProfilesGetProfileHandler<Bindings, Integration, Multipart>;
-    futureProfilesPatchProfile: FutureProfilesPatchProfileHandler<Bindings, Integration, Multipart>;
-    futureProfilesUploadProfilePhoto: FutureProfilesUploadProfilePhotoHandler<Bindings, Integration, Multipart>;
-    futureProfilesProcessLedger: FutureProfilesProcessLedgerHandler<Bindings, Integration, Multipart>;
-    futureProfilesRawReceipts: FutureProfilesRawReceiptsHandler<Bindings, Integration, Multipart>;
+    futureProfilesGetProfile?: FutureProfilesGetProfileHandler<Bindings, Integration>;
+    futureProfilesPatchProfile?: FutureProfilesPatchProfileHandler<Bindings, Integration>;
+    futureProfilesUploadProfilePhoto?: FutureProfilesUploadProfilePhotoHandler<Bindings, Integration, Multipart>;
+    futureProfilesProcessLedger?: FutureProfilesProcessLedgerHandler<Bindings, Integration>;
+    futureProfilesRawReceipts?: FutureProfilesRawReceiptsHandler<Bindings, Integration>;
 }
 
-export function registerGeneratedRoutes<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}>(app: Express, handlers: GeneratedHandlers<Bindings, Integration, Multipart>, bindings?: Bindings, options?: GeneratedRouteOptions<Integration, Multipart>): void {
+export function registerGeneratedRoutes<Bindings extends GeneratedSchemaBindings = {}, Integration extends GeneratedRequestIntegration = {}, Multipart extends GeneratedMultipartAdapters = {}>(app: Application, handlers: GeneratedHandlers<Bindings, Integration, Multipart>, bindings?: Bindings, options?: GeneratedRouteOptions<Integration, Multipart>): void {
+    const handler_futureProfilesGetProfile = handlers.futureProfilesGetProfile;
+    if (handler_futureProfilesGetProfile) {
 
-    if (!options?.integration?.secured) { throw new Error("Missing secured request policy"); }
-    const multipartAdapter_futureProfilesUploadProfilePhotoFactory = options?.multipart?.futureProfilesUploadProfilePhoto;
-    if (!multipartAdapter_futureProfilesUploadProfilePhotoFactory) { throw new Error("Missing multipart adapter for futureProfilesUploadProfilePhoto"); }
-    const multipartAdapter_futureProfilesUploadProfilePhoto = multipartAdapter_futureProfilesUploadProfilePhotoFactory({
-        id: "Future.Profiles.UploadProfilePhoto",
-        requiredParts: ["file", "metadata"]
-    }) as GeneratedMultipartAdapter<GeneratedMultipartAdapterPart<Multipart["futureProfilesUploadProfilePhoto"]>>;
-        app.get("/profiles/:profile_id", ...(options?.integration?.secured?.middleware ?? []), generatedRequestContextMiddleware(options?.integration?.secured), async (request, response, next) => {
+                    if (!options?.integration?.secured) { throw new Error("Missing secured request policy"); }
 
-            let decodedInput: FutureProfilesGetProfileInput;
-            try {
-                        const raw_profileId = readRequestParameter(request, "path", "profile_id");
-                    const parsed_profileId = parseParameterString(raw_profileId, "profile_id", true);
-                    const raw_fields = readRequestParameter(request, "query", "fields");
-                    const parsed_fields = parseParameterArray(raw_fields, "fields", false)?.map((item) => parseParameterString(item, "fields", true));
-                    const raw_apiKey = readRequestParameter(request, "header", "Authorization");
-                    const parsed_apiKey = parseParameterString(raw_apiKey, "Authorization", true);
+                    const sendPublicError_futureProfilesGetProfile = (output: GeneratedResponse<unknown>, response: Response): boolean => {
 
-                    decodedInput = {
-                        profileId: parsed_profileId,
-                        fields: parsed_fields,
-                        apiKey: parsed_apiKey,
-                    } as FutureProfilesGetProfileInput;
-            } catch (error) {
-                next(new GeneratedValidationError("Future.Profiles.GetProfile", "input", error));
-                return;
-            }
+                        return false;
+                    };
+                        app.get("/profiles/:profile_id", ...(options?.integration?.secured?.middleware ?? []), ...(options?.operationMiddleware?.futureProfilesGetProfile ?? []), generatedRequestContextMiddleware(options?.integration?.secured), async (request: Request, response: Response, next: NextFunction) => {
 
-            let input: GeneratedHandlerInput<Bindings["futureProfilesGetProfile"], FutureProfilesGetProfileInput>;
-            try {
-                input = (bindings?.futureProfilesGetProfile?.input ? bindings.futureProfilesGetProfile.input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["futureProfilesGetProfile"], FutureProfilesGetProfileInput>;
-            } catch (error) {
-                next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.GetProfile", "input", error) : error);
-                return;
-            }
+                            let decodedInput: FutureProfilesGetProfileInput;
+                            try {
+                                        const raw_profileId = readRequestParameter(request, "path", "profile_id");
+                                    const parsed_profileId = parseParameterString(raw_profileId, "profile_id", true);
+                                    const raw_fields = readRequestParameter(request, "query", "fields");
+                                    const parsed_fields = parseParameterArray(raw_fields, "fields", false)?.map((item) => parseParameterString(item, "fields", true));
+                                    const raw_apiKey = readRequestParameter(request, "header", "Authorization");
+                                    const parsed_apiKey = parseParameterString(raw_apiKey, "Authorization", true);
 
-            try {
-                const handlerOutput = await handlers.futureProfilesGetProfile(input, generatedRequestContext<GeneratedHandlerContext<Integration, "secured">>(request));
-                try {
-                    const output = normalizeGeneratedResponse(handlerOutput, 200);
-                    validateGeneratedResponseStatus(output.status, [200]);
-                                        let publicOutput: GeneratedWireOutput<Bindings["futureProfilesGetProfile"], Profile>;
-                                    try {
-                                        publicOutput = (bindings?.futureProfilesGetProfile?.output ? bindings.futureProfilesGetProfile.output.parse(output.value) : output.value) as GeneratedWireOutput<Bindings["futureProfilesGetProfile"], Profile>;
-                                    } catch (error) {
-                                        next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.GetProfile", "output", error) : error);
-                                        return;
-                                    }
-                                    const body = encodeProfile(publicOutput);
-                                    const responseBody = stringifyJsonResponse(body);
-                                    for (const [name, value] of Object.entries(output.headers)) {
-                                        response.setHeader(name, value);
-                                    }
-                                    if (!generatedResponseHasBody(output.status)) {
-                                        response.status(output.status).end();
-                                        return;
-                                    }
-                                    response.status(output.status).type("application/json").send(responseBody);
-                } catch (error) {
-                    next(new GeneratedValidationError("Future.Profiles.GetProfile", "output", error));
-                }
-            } catch (error) {
-                next(error);
-            }
-        });
-        app.patch("/profiles/:profile_id", ...(options?.integration?.secured?.middleware ?? []), generatedRequestContextMiddleware(options?.integration?.secured), options?.jsonBodyParser ?? express.raw({ type: "application/json" }), async (request, response, next) => {
+                                    decodedInput = {
+                                        profileId: parsed_profileId,
+                                        fields: parsed_fields,
+                                        apiKey: parsed_apiKey,
+                                    } as FutureProfilesGetProfileInput;
+                            } catch (error) {
+                                next(new GeneratedValidationError("Future.Profiles.GetProfile", "input", error));
+                                return;
+                            }
 
-            let decodedInput: FutureProfilesPatchProfileInput;
-            try {
-                        const raw_profileId = readRequestParameter(request, "path", "profile_id");
-                    const parsed_profileId = parseParameterString(raw_profileId, "profile_id", true);
-                    const raw_apiKey = readRequestParameter(request, "header", "Authorization");
-                    const parsed_apiKey = parseParameterString(raw_apiKey, "Authorization", true);
-                    const body = decodeProfilePatch(parseJsonBody(request.body));
-                    decodedInput = {
-                        profileId: parsed_profileId,
-                        apiKey: parsed_apiKey,
-                        body,
-                    } as FutureProfilesPatchProfileInput;
-            } catch (error) {
-                next(new GeneratedValidationError("Future.Profiles.PatchProfile", "input", error));
-                return;
-            }
+                            let input: GeneratedHandlerInput<Bindings["futureProfilesGetProfile"], FutureProfilesGetProfileInput>;
+                            try {
+                                input = (bindings?.futureProfilesGetProfile?.input ? bindings.futureProfilesGetProfile.input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["futureProfilesGetProfile"], FutureProfilesGetProfileInput>;
+                            } catch (error) {
+                                next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.GetProfile", "input", error) : error);
+                                return;
+                            }
 
-            let input: GeneratedHandlerInput<Bindings["futureProfilesPatchProfile"], FutureProfilesPatchProfileInput>;
-            try {
-                input = (bindings?.futureProfilesPatchProfile?.input ? bindings.futureProfilesPatchProfile.input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["futureProfilesPatchProfile"], FutureProfilesPatchProfileInput>;
-            } catch (error) {
-                next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.PatchProfile", "input", error) : error);
-                return;
-            }
+                            try {
+                                const handlerOutput = await handler_futureProfilesGetProfile(input, generatedRequestContext<GeneratedHandlerContext<Integration, "secured">>(request));
+                                try {
+                                    const output = normalizeGeneratedResponse(handlerOutput, 200);
+                                    validateGeneratedResponseStatus(output.status, [200]);
+                                                        if (sendPublicError_futureProfilesGetProfile(output, response)) { return; }
+                                                    let publicOutput: GeneratedWireOutput<Bindings["futureProfilesGetProfile"], Profile>;
+                                                    try {
+                                                        publicOutput = (bindings?.futureProfilesGetProfile?.output ? bindings.futureProfilesGetProfile.output.parse(output.value) : output.value) as GeneratedWireOutput<Bindings["futureProfilesGetProfile"], Profile>;
+                                                    } catch (error) {
+                                                        next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.GetProfile", "output", error) : error);
+                                                        return;
+                                                    }
+                                                    const body = encodeProfile(publicOutput);
+                                                    const responseBody = stringifyJsonResponse(body);
 
-            try {
-                const handlerOutput = await handlers.futureProfilesPatchProfile(input, generatedRequestContext<GeneratedHandlerContext<Integration, "secured">>(request));
-                try {
-                    const output = normalizeGeneratedResponse(handlerOutput, 200);
-                    validateGeneratedResponseStatus(output.status, [200]);
-                                        let publicOutput: GeneratedWireOutput<Bindings["futureProfilesPatchProfile"], ProfilePatch>;
-                                    try {
-                                        publicOutput = (bindings?.futureProfilesPatchProfile?.output ? bindings.futureProfilesPatchProfile.output.parse(output.value) : output.value) as GeneratedWireOutput<Bindings["futureProfilesPatchProfile"], ProfilePatch>;
-                                    } catch (error) {
-                                        next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.PatchProfile", "output", error) : error);
-                                        return;
-                                    }
-                                    const body = encodeProfilePatch(publicOutput);
-                                    const responseBody = stringifyJsonResponse(body);
-                                    for (const [name, value] of Object.entries(output.headers)) {
-                                        response.setHeader(name, value);
-                                    }
-                                    if (!generatedResponseHasBody(output.status)) {
-                                        response.status(output.status).end();
-                                        return;
-                                    }
-                                    response.status(output.status).type("application/json").send(responseBody);
-                } catch (error) {
-                    next(new GeneratedValidationError("Future.Profiles.PatchProfile", "output", error));
-                }
-            } catch (error) {
-                next(error);
-            }
-        });
-        app.post("/profiles/:profile_id/photo", ...(options?.integration?.secured?.middleware ?? []), generatedRequestContextMiddleware(options?.integration?.secured), ...multipartAdapter_futureProfilesUploadProfilePhoto.middleware, async (request, response, next) => {
-                        let multipartParts: ReadonlyMap<string, readonly GeneratedMultipartAdapterPart<Multipart["futureProfilesUploadProfilePhoto"]>[]>;
-                    try {
-                        multipartParts = await multipartAdapter_futureProfilesUploadProfilePhoto.read(request, response);
-                    } catch (error) {
-                        next(error);
-                        return;
-                    }
-                    if (response.headersSent || response.writableEnded) {
-                        return;
-                    }
-            let decodedInput: FutureProfilesUploadProfilePhotoInput<Multipart>;
-            try {
-                        const raw_profileId = readRequestParameter(request, "path", "profile_id");
-                    const parsed_profileId = parseParameterString(raw_profileId, "profile_id", true);
-                    const raw_apiKey = readRequestParameter(request, "header", "Authorization");
-                    const parsed_apiKey = parseParameterString(raw_apiKey, "Authorization", true);
-                    const body = {
-                        parts: multipartParts,
-                        required: {
-                                                    "file": generatedRequiredMultipartPart(multipartParts, "file"),
-                                                    "metadata": generatedRequiredMultipartPart(multipartParts, "metadata")
+                                                    for (const [name, value] of Object.entries(output.headers)) {
+                                                        response.setHeader(name, value);
+                                                    }
+                                                    if (!generatedResponseHasBody(output.status)) {
+                                                        response.status(output.status).end();
+                                                        return;
+                                                    }
+                                                    response.status(output.status).type("application/json").send(responseBody);
+                                } catch (error) {
+                                    next(new GeneratedValidationError("Future.Profiles.GetProfile", "output", error));
+                                }
+                            } catch (error) {
+                                next(error);
+                            }
+                        }, async (error: unknown, _request: Request, response: Response, next: NextFunction) => {
+                        if (response.headersSent || response.writableEnded) {
+                            next(error);
+                            return;
                         }
-                    } as GeneratedMultipartBody<GeneratedMultipartAdapterPart<Multipart["futureProfilesUploadProfilePhoto"]>, "file" | "metadata">;
-                    decodedInput = {
-                        profileId: parsed_profileId,
-                        apiKey: parsed_apiKey,
-                        body,
-                    } as FutureProfilesUploadProfilePhotoInput<Multipart>;
-            } catch (error) {
-                next(new GeneratedValidationError("Future.Profiles.UploadProfilePhoto", "input", error));
-                return;
-            }
+                        if (error instanceof GeneratedValidationError && error.phase === "output") {
+                            next(error);
+                            return;
+                        }
+                        if (!options?.mapError) {
+                            next(error);
+                            return;
+                        }
+                        try {
+                            const mapped = await options.mapError(error);
+                            if (!mapped) {
+                                throw new Error("Unmapped operation error");
+                            }
+                            const output = {
+                                kind: "generated-response" as const,
+                                status: mapped.status,
+                                headers: { ...mapped.headers },
+                                value: false ? undefined : mapped.value,
+                            };
+                            if (!sendPublicError_futureProfilesGetProfile(output, response)) {
+                                throw new Error("Undeclared public error status");
+                            }
+                        } catch (failure) {
+                            next(new GeneratedValidationError("Future.Profiles.GetProfile", "output", failure));
+                        }
+                    });
+    }
+    const handler_futureProfilesPatchProfile = handlers.futureProfilesPatchProfile;
+    if (handler_futureProfilesPatchProfile) {
 
-            let input: GeneratedHandlerInput<Bindings["futureProfilesUploadProfilePhoto"], FutureProfilesUploadProfilePhotoInput<Multipart>>;
-            try {
-                input = (bindings?.futureProfilesUploadProfilePhoto?.input ? bindings.futureProfilesUploadProfilePhoto.input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["futureProfilesUploadProfilePhoto"], FutureProfilesUploadProfilePhotoInput<Multipart>>;
-            } catch (error) {
-                next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.UploadProfilePhoto", "input", error) : error);
-                return;
-            }
+                    if (!options?.integration?.secured) { throw new Error("Missing secured request policy"); }
 
-            try {
-                const handlerOutput = await handlers.futureProfilesUploadProfilePhoto(input, generatedRequestContext<GeneratedHandlerContext<Integration, "secured">>(request));
-                try {
-                    const output = normalizeGeneratedResponse(handlerOutput, 201);
-                    validateGeneratedResponseStatus(output.status, [201]);
-                                        let publicOutput: GeneratedWireOutput<Bindings["futureProfilesUploadProfilePhoto"], PhotoReceipt>;
+                    const sendPublicError_futureProfilesPatchProfile = (output: GeneratedResponse<unknown>, response: Response): boolean => {
+
+                        return false;
+                    };
+                        app.patch("/profiles/:profile_id", ...(options?.integration?.secured?.middleware ?? []), ...(options?.operationMiddleware?.futureProfilesPatchProfile ?? []), generatedRequestContextMiddleware(options?.integration?.secured), options?.jsonBodyParser ?? express.raw({ type: "application/json" }), async (request: Request, response: Response, next: NextFunction) => {
+
+                            let decodedInput: FutureProfilesPatchProfileInput;
+                            try {
+                                        const raw_profileId = readRequestParameter(request, "path", "profile_id");
+                                    const parsed_profileId = parseParameterString(raw_profileId, "profile_id", true);
+                                    const raw_apiKey = readRequestParameter(request, "header", "Authorization");
+                                    const parsed_apiKey = parseParameterString(raw_apiKey, "Authorization", true);
+                                    const body = decodeProfilePatch(parseJsonBody(request.body));
+                                    decodedInput = {
+                                        profileId: parsed_profileId,
+                                        apiKey: parsed_apiKey,
+                                        body,
+                                    } as FutureProfilesPatchProfileInput;
+                            } catch (error) {
+                                next(new GeneratedValidationError("Future.Profiles.PatchProfile", "input", error));
+                                return;
+                            }
+
+                            let input: GeneratedHandlerInput<Bindings["futureProfilesPatchProfile"], FutureProfilesPatchProfileInput>;
+                            try {
+                                input = (bindings?.futureProfilesPatchProfile?.input ? bindings.futureProfilesPatchProfile.input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["futureProfilesPatchProfile"], FutureProfilesPatchProfileInput>;
+                            } catch (error) {
+                                next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.PatchProfile", "input", error) : error);
+                                return;
+                            }
+
+                            try {
+                                const handlerOutput = await handler_futureProfilesPatchProfile(input, generatedRequestContext<GeneratedHandlerContext<Integration, "secured">>(request));
+                                try {
+                                    const output = normalizeGeneratedResponse(handlerOutput, 200);
+                                    validateGeneratedResponseStatus(output.status, [200]);
+                                                        if (sendPublicError_futureProfilesPatchProfile(output, response)) { return; }
+                                                    let publicOutput: GeneratedWireOutput<Bindings["futureProfilesPatchProfile"], ProfilePatch>;
+                                                    try {
+                                                        publicOutput = (bindings?.futureProfilesPatchProfile?.output ? bindings.futureProfilesPatchProfile.output.parse(output.value) : output.value) as GeneratedWireOutput<Bindings["futureProfilesPatchProfile"], ProfilePatch>;
+                                                    } catch (error) {
+                                                        next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.PatchProfile", "output", error) : error);
+                                                        return;
+                                                    }
+                                                    const body = encodeProfilePatch(publicOutput);
+                                                    const responseBody = stringifyJsonResponse(body);
+
+                                                    for (const [name, value] of Object.entries(output.headers)) {
+                                                        response.setHeader(name, value);
+                                                    }
+                                                    if (!generatedResponseHasBody(output.status)) {
+                                                        response.status(output.status).end();
+                                                        return;
+                                                    }
+                                                    response.status(output.status).type("application/json").send(responseBody);
+                                } catch (error) {
+                                    next(new GeneratedValidationError("Future.Profiles.PatchProfile", "output", error));
+                                }
+                            } catch (error) {
+                                next(error);
+                            }
+                        }, async (error: unknown, _request: Request, response: Response, next: NextFunction) => {
+                        if (response.headersSent || response.writableEnded) {
+                            next(error);
+                            return;
+                        }
+                        if (error instanceof GeneratedValidationError && error.phase === "output") {
+                            next(error);
+                            return;
+                        }
+                        if (!options?.mapError) {
+                            next(error);
+                            return;
+                        }
+                        try {
+                            const mapped = await options.mapError(error);
+                            if (!mapped) {
+                                throw new Error("Unmapped operation error");
+                            }
+                            const output = {
+                                kind: "generated-response" as const,
+                                status: mapped.status,
+                                headers: { ...mapped.headers },
+                                value: false ? undefined : mapped.value,
+                            };
+                            if (!sendPublicError_futureProfilesPatchProfile(output, response)) {
+                                throw new Error("Undeclared public error status");
+                            }
+                        } catch (failure) {
+                            next(new GeneratedValidationError("Future.Profiles.PatchProfile", "output", failure));
+                        }
+                    });
+    }
+    const handler_futureProfilesUploadProfilePhoto = handlers.futureProfilesUploadProfilePhoto;
+    if (handler_futureProfilesUploadProfilePhoto) {
+
+                    if (!options?.integration?.secured) { throw new Error("Missing secured request policy"); }
+                    const multipartAdapter_futureProfilesUploadProfilePhotoFactory = options?.multipart?.futureProfilesUploadProfilePhoto;
+                    if (!multipartAdapter_futureProfilesUploadProfilePhotoFactory) { throw new Error("Missing multipart adapter for futureProfilesUploadProfilePhoto"); }
+                    const multipartAdapter_futureProfilesUploadProfilePhoto = multipartAdapter_futureProfilesUploadProfilePhotoFactory({
+                        id: "Future.Profiles.UploadProfilePhoto",
+                        requiredParts: ["file", "metadata"]
+                    }) as GeneratedMultipartAdapter<GeneratedMultipartAdapterPart<Multipart["futureProfilesUploadProfilePhoto"]>>;
+                    const sendPublicError_futureProfilesUploadProfilePhoto = (output: GeneratedResponse<unknown>, response: Response): boolean => {
+
+                        return false;
+                    };
+                        app.post("/profiles/:profile_id/photo", ...(options?.integration?.secured?.middleware ?? []), ...(options?.operationMiddleware?.futureProfilesUploadProfilePhoto ?? []), generatedRequestContextMiddleware(options?.integration?.secured), ...multipartAdapter_futureProfilesUploadProfilePhoto.middleware, async (request: Request, response: Response, next: NextFunction) => {
+                                        let multipartParts: ReadonlyMap<string, readonly GeneratedMultipartAdapterPart<Multipart["futureProfilesUploadProfilePhoto"]>[]>;
                                     try {
-                                        publicOutput = (bindings?.futureProfilesUploadProfilePhoto?.output ? bindings.futureProfilesUploadProfilePhoto.output.parse(output.value) : output.value) as GeneratedWireOutput<Bindings["futureProfilesUploadProfilePhoto"], PhotoReceipt>;
+                                        multipartParts = await multipartAdapter_futureProfilesUploadProfilePhoto.read(request, response);
                                     } catch (error) {
-                                        next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.UploadProfilePhoto", "output", error) : error);
+                                        next(error);
                                         return;
                                     }
-                                    const body = encodePhotoReceipt(publicOutput);
-                                    const responseBody = stringifyJsonResponse(body);
-                                    for (const [name, value] of Object.entries(output.headers)) {
-                                        response.setHeader(name, value);
-                                    }
-                                    if (!generatedResponseHasBody(output.status)) {
-                                        response.status(output.status).end();
+                                    if (response.headersSent || response.writableEnded) {
                                         return;
                                     }
-                                    response.status(output.status).type("application/json").send(responseBody);
-                } catch (error) {
-                    next(new GeneratedValidationError("Future.Profiles.UploadProfilePhoto", "output", error));
-                }
-            } catch (error) {
-                next(error);
-            }
-        });
-        app.post("/profiles/:profile_id/ledger", ...(options?.integration?.secured?.middleware ?? []), generatedRequestContextMiddleware(options?.integration?.secured), options?.jsonBodyParser ?? express.raw({ type: "application/json" }), async (request, response, next) => {
+                            let decodedInput: FutureProfilesUploadProfilePhotoInput<Multipart>;
+                            try {
+                                        const raw_profileId = readRequestParameter(request, "path", "profile_id");
+                                    const parsed_profileId = parseParameterString(raw_profileId, "profile_id", true);
+                                    const raw_apiKey = readRequestParameter(request, "header", "Authorization");
+                                    const parsed_apiKey = parseParameterString(raw_apiKey, "Authorization", true);
+                                    const body = {
+                                        parts: multipartParts,
+                                        required: {
+                                                                    "file": generatedRequiredMultipartPart(multipartParts, "file"),
+                                                                    "metadata": generatedRequiredMultipartPart(multipartParts, "metadata")
+                                        }
+                                    } as GeneratedMultipartBody<GeneratedMultipartAdapterPart<Multipart["futureProfilesUploadProfilePhoto"]>, "file" | "metadata">;
+                                    decodedInput = {
+                                        profileId: parsed_profileId,
+                                        apiKey: parsed_apiKey,
+                                        body,
+                                    } as FutureProfilesUploadProfilePhotoInput<Multipart>;
+                            } catch (error) {
+                                next(new GeneratedValidationError("Future.Profiles.UploadProfilePhoto", "input", error));
+                                return;
+                            }
 
-            let decodedInput: FutureProfilesProcessLedgerInput;
-            try {
-                        const raw_profileId = readRequestParameter(request, "path", "profile_id");
-                    const parsed_profileId = parseParameterString(raw_profileId, "profile_id", true);
-                    const raw_apiKey = readRequestParameter(request, "header", "Authorization");
-                    const parsed_apiKey = parseParameterString(raw_apiKey, "Authorization", true);
-                    const body = decodeLedgerBatch(parseJsonBody(request.body));
-                    decodedInput = {
-                        profileId: parsed_profileId,
-                        apiKey: parsed_apiKey,
-                        body,
-                    } as FutureProfilesProcessLedgerInput;
-            } catch (error) {
-                next(new GeneratedValidationError("Future.Profiles.ProcessLedger", "input", error));
-                return;
-            }
+                            let input: GeneratedHandlerInput<Bindings["futureProfilesUploadProfilePhoto"], FutureProfilesUploadProfilePhotoInput<Multipart>>;
+                            try {
+                                input = (bindings?.futureProfilesUploadProfilePhoto?.input ? bindings.futureProfilesUploadProfilePhoto.input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["futureProfilesUploadProfilePhoto"], FutureProfilesUploadProfilePhotoInput<Multipart>>;
+                            } catch (error) {
+                                next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.UploadProfilePhoto", "input", error) : error);
+                                return;
+                            }
 
-            let input: GeneratedHandlerInput<Bindings["futureProfilesProcessLedger"], FutureProfilesProcessLedgerInput>;
-            try {
-                input = (bindings?.futureProfilesProcessLedger?.input ? bindings.futureProfilesProcessLedger.input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["futureProfilesProcessLedger"], FutureProfilesProcessLedgerInput>;
-            } catch (error) {
-                next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.ProcessLedger", "input", error) : error);
-                return;
-            }
+                            try {
+                                const handlerOutput = await handler_futureProfilesUploadProfilePhoto(input, generatedRequestContext<GeneratedHandlerContext<Integration, "secured">>(request));
+                                try {
+                                    const output = normalizeGeneratedResponse(handlerOutput, 201);
+                                    validateGeneratedResponseStatus(output.status, [201]);
+                                                        if (sendPublicError_futureProfilesUploadProfilePhoto(output, response)) { return; }
+                                                    let publicOutput: GeneratedWireOutput<Bindings["futureProfilesUploadProfilePhoto"], PhotoReceipt>;
+                                                    try {
+                                                        publicOutput = (bindings?.futureProfilesUploadProfilePhoto?.output ? bindings.futureProfilesUploadProfilePhoto.output.parse(output.value) : output.value) as GeneratedWireOutput<Bindings["futureProfilesUploadProfilePhoto"], PhotoReceipt>;
+                                                    } catch (error) {
+                                                        next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.UploadProfilePhoto", "output", error) : error);
+                                                        return;
+                                                    }
+                                                    const body = encodePhotoReceipt(publicOutput);
+                                                    const responseBody = stringifyJsonResponse(body);
 
-            try {
-                const handlerOutput = await handlers.futureProfilesProcessLedger(input, generatedRequestContext<GeneratedHandlerContext<Integration, "secured">>(request));
-                try {
-                    const output = normalizeGeneratedResponse(handlerOutput, 200);
-                    validateGeneratedResponseStatus(output.status, [200]);
-                                        let publicOutput: GeneratedWireOutput<Bindings["futureProfilesProcessLedger"], LedgerBatch>;
-                                    try {
-                                        publicOutput = (bindings?.futureProfilesProcessLedger?.output ? bindings.futureProfilesProcessLedger.output.parse(output.value) : output.value) as GeneratedWireOutput<Bindings["futureProfilesProcessLedger"], LedgerBatch>;
-                                    } catch (error) {
-                                        next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.ProcessLedger", "output", error) : error);
-                                        return;
-                                    }
-                                    const body = encodeLedgerBatch(publicOutput);
-                                    const responseBody = stringifyJsonResponse(body);
-                                    for (const [name, value] of Object.entries(output.headers)) {
-                                        response.setHeader(name, value);
-                                    }
-                                    if (!generatedResponseHasBody(output.status)) {
-                                        response.status(output.status).end();
-                                        return;
-                                    }
-                                    response.status(output.status).type("application/json").send(responseBody);
-                } catch (error) {
-                    next(new GeneratedValidationError("Future.Profiles.ProcessLedger", "output", error));
-                }
-            } catch (error) {
-                next(error);
-            }
-        });
-        app.post("/receipts/raw", ...(options?.integration?.unsecured?.middleware ?? []), generatedRequestContextMiddleware(options?.integration?.unsecured), options?.rawBodyParser ?? express.raw({ type: "multipart/form-data" }), async (request, response, next) => {
+                                                    for (const [name, value] of Object.entries(output.headers)) {
+                                                        response.setHeader(name, value);
+                                                    }
+                                                    if (!generatedResponseHasBody(output.status)) {
+                                                        response.status(output.status).end();
+                                                        return;
+                                                    }
+                                                    response.status(output.status).type("application/json").send(responseBody);
+                                } catch (error) {
+                                    next(new GeneratedValidationError("Future.Profiles.UploadProfilePhoto", "output", error));
+                                }
+                            } catch (error) {
+                                next(error);
+                            }
+                        }, async (error: unknown, _request: Request, response: Response, next: NextFunction) => {
+                        if (response.headersSent || response.writableEnded) {
+                            next(error);
+                            return;
+                        }
+                        if (error instanceof GeneratedValidationError && error.phase === "output") {
+                            next(error);
+                            return;
+                        }
+                        if (!options?.mapError) {
+                            next(error);
+                            return;
+                        }
+                        try {
+                            const mapped = await options.mapError(error);
+                            if (!mapped) {
+                                throw new Error("Unmapped operation error");
+                            }
+                            const output = {
+                                kind: "generated-response" as const,
+                                status: mapped.status,
+                                headers: { ...mapped.headers },
+                                value: false ? undefined : mapped.value,
+                            };
+                            if (!sendPublicError_futureProfilesUploadProfilePhoto(output, response)) {
+                                throw new Error("Undeclared public error status");
+                            }
+                        } catch (failure) {
+                            next(new GeneratedValidationError("Future.Profiles.UploadProfilePhoto", "output", failure));
+                        }
+                    });
+    }
+    const handler_futureProfilesProcessLedger = handlers.futureProfilesProcessLedger;
+    if (handler_futureProfilesProcessLedger) {
 
-            let decodedInput: Uint8Array;
-            try {
-                        if (!(request.body instanceof Uint8Array)) {
-                        throw new Error("Invalid raw request body");
-                    }
-                    decodedInput = request.body;
-            } catch (error) {
-                next(new GeneratedValidationError("Future.Profiles.RawReceipts", "input", error));
-                return;
-            }
+                    if (!options?.integration?.secured) { throw new Error("Missing secured request policy"); }
 
-            let input: GeneratedHandlerInput<Bindings["futureProfilesRawReceipts"], Uint8Array>;
-            try {
-                input = (bindings?.futureProfilesRawReceipts?.input ? bindings.futureProfilesRawReceipts.input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["futureProfilesRawReceipts"], Uint8Array>;
-            } catch (error) {
-                next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.RawReceipts", "input", error) : error);
-                return;
-            }
+                    const sendPublicError_futureProfilesProcessLedger = (output: GeneratedResponse<unknown>, response: Response): boolean => {
 
-            try {
-                const handlerOutput = await handlers.futureProfilesRawReceipts(input, generatedRequestContext<GeneratedHandlerContext<Integration, "unsecured">>(request));
-                try {
-                    const output = normalizeGeneratedResponse(handlerOutput, 200);
-                    validateGeneratedResponseStatus(output.status, [200]);
-                                        if (!(output.value instanceof Uint8Array)) {
-                                        throw new Error("Invalid raw response body");
+                        return false;
+                    };
+                        app.post("/profiles/:profile_id/ledger", ...(options?.integration?.secured?.middleware ?? []), ...(options?.operationMiddleware?.futureProfilesProcessLedger ?? []), generatedRequestContextMiddleware(options?.integration?.secured), options?.jsonBodyParser ?? express.raw({ type: "application/json" }), async (request: Request, response: Response, next: NextFunction) => {
+
+                            let decodedInput: FutureProfilesProcessLedgerInput;
+                            try {
+                                        const raw_profileId = readRequestParameter(request, "path", "profile_id");
+                                    const parsed_profileId = parseParameterString(raw_profileId, "profile_id", true);
+                                    const raw_apiKey = readRequestParameter(request, "header", "Authorization");
+                                    const parsed_apiKey = parseParameterString(raw_apiKey, "Authorization", true);
+                                    const body = decodeLedgerBatch(parseJsonBody(request.body));
+                                    decodedInput = {
+                                        profileId: parsed_profileId,
+                                        apiKey: parsed_apiKey,
+                                        body,
+                                    } as FutureProfilesProcessLedgerInput;
+                            } catch (error) {
+                                next(new GeneratedValidationError("Future.Profiles.ProcessLedger", "input", error));
+                                return;
+                            }
+
+                            let input: GeneratedHandlerInput<Bindings["futureProfilesProcessLedger"], FutureProfilesProcessLedgerInput>;
+                            try {
+                                input = (bindings?.futureProfilesProcessLedger?.input ? bindings.futureProfilesProcessLedger.input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["futureProfilesProcessLedger"], FutureProfilesProcessLedgerInput>;
+                            } catch (error) {
+                                next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.ProcessLedger", "input", error) : error);
+                                return;
+                            }
+
+                            try {
+                                const handlerOutput = await handler_futureProfilesProcessLedger(input, generatedRequestContext<GeneratedHandlerContext<Integration, "secured">>(request));
+                                try {
+                                    const output = normalizeGeneratedResponse(handlerOutput, 200);
+                                    validateGeneratedResponseStatus(output.status, [200]);
+                                                        if (sendPublicError_futureProfilesProcessLedger(output, response)) { return; }
+                                                    let publicOutput: GeneratedWireOutput<Bindings["futureProfilesProcessLedger"], LedgerBatch>;
+                                                    try {
+                                                        publicOutput = (bindings?.futureProfilesProcessLedger?.output ? bindings.futureProfilesProcessLedger.output.parse(output.value) : output.value) as GeneratedWireOutput<Bindings["futureProfilesProcessLedger"], LedgerBatch>;
+                                                    } catch (error) {
+                                                        next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.ProcessLedger", "output", error) : error);
+                                                        return;
+                                                    }
+                                                    const body = encodeLedgerBatch(publicOutput);
+                                                    const responseBody = stringifyJsonResponse(body);
+
+                                                    for (const [name, value] of Object.entries(output.headers)) {
+                                                        response.setHeader(name, value);
+                                                    }
+                                                    if (!generatedResponseHasBody(output.status)) {
+                                                        response.status(output.status).end();
+                                                        return;
+                                                    }
+                                                    response.status(output.status).type("application/json").send(responseBody);
+                                } catch (error) {
+                                    next(new GeneratedValidationError("Future.Profiles.ProcessLedger", "output", error));
+                                }
+                            } catch (error) {
+                                next(error);
+                            }
+                        }, async (error: unknown, _request: Request, response: Response, next: NextFunction) => {
+                        if (response.headersSent || response.writableEnded) {
+                            next(error);
+                            return;
+                        }
+                        if (error instanceof GeneratedValidationError && error.phase === "output") {
+                            next(error);
+                            return;
+                        }
+                        if (!options?.mapError) {
+                            next(error);
+                            return;
+                        }
+                        try {
+                            const mapped = await options.mapError(error);
+                            if (!mapped) {
+                                throw new Error("Unmapped operation error");
+                            }
+                            const output = {
+                                kind: "generated-response" as const,
+                                status: mapped.status,
+                                headers: { ...mapped.headers },
+                                value: false ? undefined : mapped.value,
+                            };
+                            if (!sendPublicError_futureProfilesProcessLedger(output, response)) {
+                                throw new Error("Undeclared public error status");
+                            }
+                        } catch (failure) {
+                            next(new GeneratedValidationError("Future.Profiles.ProcessLedger", "output", failure));
+                        }
+                    });
+    }
+    const handler_futureProfilesRawReceipts = handlers.futureProfilesRawReceipts;
+    if (handler_futureProfilesRawReceipts) {
+
+
+
+                    const sendPublicError_futureProfilesRawReceipts = (output: GeneratedResponse<unknown>, response: Response): boolean => {
+
+                        return false;
+                    };
+                        app.post("/receipts/raw", ...(options?.integration?.unsecured?.middleware ?? []), ...(options?.operationMiddleware?.futureProfilesRawReceipts ?? []), generatedRequestContextMiddleware(options?.integration?.unsecured), options?.rawBodyParser ?? express.raw({ type: "multipart/form-data" }), async (request: Request, response: Response, next: NextFunction) => {
+
+                            let decodedInput: Uint8Array;
+                            try {
+                                        if (!(request.body instanceof Uint8Array)) {
+                                        throw new Error("Invalid raw request body");
                                     }
-                                    for (const [name, value] of Object.entries(output.headers)) {
-                                        response.setHeader(name, value);
-                                    }
-                                    if (!generatedResponseHasBody(output.status)) {
-                                        response.status(output.status).end();
-                                        return;
-                                    }
-                                    response.status(output.status).type("multipart/form-data").send(output.value);
-                } catch (error) {
-                    next(new GeneratedValidationError("Future.Profiles.RawReceipts", "output", error));
-                }
-            } catch (error) {
-                next(error);
-            }
-        });
+                                    decodedInput = request.body;
+                            } catch (error) {
+                                next(new GeneratedValidationError("Future.Profiles.RawReceipts", "input", error));
+                                return;
+                            }
+
+                            let input: GeneratedHandlerInput<Bindings["futureProfilesRawReceipts"], Uint8Array>;
+                            try {
+                                input = (bindings?.futureProfilesRawReceipts?.input ? bindings.futureProfilesRawReceipts.input.parse(decodedInput) : decodedInput) as GeneratedHandlerInput<Bindings["futureProfilesRawReceipts"], Uint8Array>;
+                            } catch (error) {
+                                next(error instanceof z.ZodError ? new GeneratedValidationError("Future.Profiles.RawReceipts", "input", error) : error);
+                                return;
+                            }
+
+                            try {
+                                const handlerOutput = await handler_futureProfilesRawReceipts(input, generatedRequestContext<GeneratedHandlerContext<Integration, "unsecured">>(request));
+                                try {
+                                    const output = normalizeGeneratedResponse(handlerOutput, 200);
+                                    validateGeneratedResponseStatus(output.status, [200]);
+                                                        if (sendPublicError_futureProfilesRawReceipts(output, response)) { return; }
+                                                    if (!(output.value instanceof Uint8Array)) {
+                                                        throw new Error("Invalid raw response body");
+                                                    }
+
+                                                    for (const [name, value] of Object.entries(output.headers)) {
+                                                        response.setHeader(name, value);
+                                                    }
+                                                    if (!generatedResponseHasBody(output.status)) {
+                                                        response.status(output.status).end();
+                                                        return;
+                                                    }
+                                                    const contentType = output.headers["Content-Type"] ?? output.headers["content-type"] ?? "multipart/form-data";
+                                                    response.status(output.status).type(contentType).send(output.value);
+                                } catch (error) {
+                                    next(new GeneratedValidationError("Future.Profiles.RawReceipts", "output", error));
+                                }
+                            } catch (error) {
+                                next(error);
+                            }
+                        }, async (error: unknown, _request: Request, response: Response, next: NextFunction) => {
+                        if (response.headersSent || response.writableEnded) {
+                            next(error);
+                            return;
+                        }
+                        if (error instanceof GeneratedValidationError && error.phase === "output") {
+                            next(error);
+                            return;
+                        }
+                        if (!options?.mapError) {
+                            next(error);
+                            return;
+                        }
+                        try {
+                            const mapped = await options.mapError(error);
+                            if (!mapped) {
+                                throw new Error("Unmapped operation error");
+                            }
+                            const output = {
+                                kind: "generated-response" as const,
+                                status: mapped.status,
+                                headers: { ...mapped.headers },
+                                value: false ? undefined : mapped.value,
+                            };
+                            if (!sendPublicError_futureProfilesRawReceipts(output, response)) {
+                                throw new Error("Undeclared public error status");
+                            }
+                        } catch (failure) {
+                            next(new GeneratedValidationError("Future.Profiles.RawReceipts", "output", failure));
+                        }
+                    });
+    }
 }

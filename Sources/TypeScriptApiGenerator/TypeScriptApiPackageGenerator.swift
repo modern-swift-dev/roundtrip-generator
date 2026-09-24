@@ -6,7 +6,7 @@ public struct TypeScriptApiPackageGenerator {
     public let options: TypeScriptGeneratorOptions
 
     public init(package: ApiPackage, options: TypeScriptGeneratorOptions = .init()) {
-        self.package = package
+        self.package = package.clientAudiencePackage
         self.options = options
     }
 

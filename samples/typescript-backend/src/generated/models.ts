@@ -4,17 +4,11 @@ import { z } from "zod";
 import {
     base64ToUint8Array,
     isValidBase64,
-    isValidCalendarDate,
     isValidISODate,
-    isValidLocalTime,
-    isValidURL,
     isValidUUID,
     parseDate,
-    parseDouble,
     parseNarrowInteger,
-    parseURL,
     serializeDate,
-    serializeURL,
     uint8ArrayToBase64
 } from "./runtime.js";
 
@@ -148,7 +142,7 @@ export function decodeLedgerBatch(value: unknown): LedgerBatch {
 export function encodeLedgerBatch(value: LedgerBatch): unknown {
     return LedgerBatchWireSchema().parse({
         "entries": value.entries.map((item) => encodeLedgerEntry(item)),
-        "totals": Object.fromEntries(Object.entries(value.totals).map(([key, item]) => [key, item as bigint])),
+        "totals": Object.fromEntries(Object.entries(value.totals).map(([key, item]) => [key, (item as bigint)])),
     });
 }
 

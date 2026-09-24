@@ -1022,3 +1022,15 @@ struct TypeScriptBackendGeneratorTests {
         )
     }
 }
+
+extension TypeScriptBackendGeneratorTests {
+    @Test func backendAudienceRemainsMountedAndTyped() throws {
+        let secret = ApiTypeSchema.object(typeName: "SecretPayload", properties: [.string("value")])
+        let operation = ApiOperation.get(name: "hidden", path: .relative("/hidden"), security: .unsecured, response: secret.asRef).backendOnly()
+        let files = try TypeScriptBackendApiPackageGenerator(package: testPackage(operation: operation, references: [secret])).generatedFiles()
+        let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+        let models = try #require(files.first { $0.relativePath == "src/generated/models.ts" }?.contents)
+        #expect(routes.contains("app.get(\"/hidden\""))
+        #expect(models.contains("interface SecretPayload"))
+    }
+}

@@ -403,3 +403,16 @@ import Testing
         )
     }
 }
+
+extension OpenApiYamlGeneratorTests {
+    @Test func backendAudienceRemainsDocumented() throws {
+        let secret = ApiTypeSchema.object(typeName: "SecretPayload", properties: [.string("value")])
+        let operation = ApiOperation.get(name: "hidden", path: .relative("/hidden"), security: .unsecured, response: secret.asRef).backendOnly()
+        let package = ApiPackage(name: "Audience", targetDirUrl: URL(fileURLWithPath: "/unused"), modules: [
+            ApiModule(name: "Records", definitions: [ApiService(name: "Records", operations: [operation], references: [secret])])
+        ])
+        let yaml = try OpenApiYamlPackageGenerator(package: package).generatedFile().contents
+        #expect(yaml.contains("\"/hidden\":"))
+        #expect(yaml.contains("SecretPayload:"))
+    }
+}

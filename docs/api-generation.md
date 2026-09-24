@@ -899,3 +899,19 @@ URL properties now follow the same requiredness rules as other property helpers.
 Field-selection support has been removed: `fieldsQueryParam`, `fieldsQueryParamValues`, and the dynamic-object `published` and `publishDataPropertyNameFirst` parameters are no longer available. Remove those arguments and helper calls from schema declarations. The generator no longer supplies or rewrites `fields`/`optional_fields` queries. Dynamic Kotlin constructors use the former default order: extra properties before the payload. Independent `.unpublished` model-property visibility remains available.
 
 Existing array initializers, resource identifier arguments, REST default security and pagination, and Swift whole-directory writes remain available. Adopt builders and named configuration incrementally.
+
+### Backend-only operations
+
+Operations target all generators by default. Append `.backendOnly()` to an operation to keep its server route and OpenAPI definition while excluding its Swift, Kotlin, Android, and TypeScript client APIs. Built-in operation-copy helpers preserve this audience. Code that constructs a replacement `ApiOperation` must pass `audience: operation.audience` explicitly.
+
+Client generation also removes models reachable exclusively from backend-only operations, including parameter, success-response, and public-error dependencies. Shared client dependencies and independently declared models remain. Services whose operations are all backend-only do not produce empty client APIs; retained shared models are moved to module references when necessary.
+
+### TypeScript backend middleware and thrown errors
+
+`GeneratedRouteOptions.operationMiddleware` accepts generated handler names as keys. Middleware runs in this order: security-policy middleware, operation middleware, context construction, body parsing, generated input decoding/binding, and the endpoint handler. An operation without a registered handler installs no middleware.
+
+An optional `mapError(error)` hook maps application failures to `GeneratedMappedError`: a numeric `status`, optional mapped DTO `value`, and optional `headers`. `GeneratedPublicErrorBody` is the generated union of declared public-error DTOs. One mapper can serve the entire API; application code does not repeat allowed statuses per operation.
+
+Each generated route catches middleware, context, parser, input, and handler failures. It validates the mapped status against that operation's public-error declarations and uses the declared encoder, including stripping undeclared fields. A declared bodyless error such as 408 discards the mapper's body. Headers are applied only after the body validates. Returned generated error responses use the same serializer.
+
+Unmapped errors, undeclared statuses, mapper failures, and invalid error payloads become `GeneratedValidationError` with phase `output`, which is forwarded to the host's sanitized internal-error middleware. Output validation failures bypass the mapper. The host must never expose these internal validation details or their causes. Routes without a mapper preserve the existing Express error forwarding behavior. Hooks that directly complete a response retain application ownership of that response; use `next(error)` to opt into the generated public-error boundary.

@@ -6,7 +6,7 @@ public struct ApiPackageGenerator {
     public let package: ApiPackage
 
     public init(package: ApiPackage) {
-        self.package = package
+        self.package = package.clientAudiencePackage
     }
 
     /// Render sources without creating or changing the destination directory.
