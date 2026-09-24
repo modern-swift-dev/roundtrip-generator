@@ -155,6 +155,7 @@ public struct OpenApiYamlPackageGenerator {
             repeatedMultipartParts: operation.repeatedMultipartParts,
             optionalMultipartParts: operation.optionalMultipartParts,
             textMultipartParts: operation.textMultipartParts,
+            maxMultipartParts: operation.maxMultipartParts,
             &yaml,
             context: context,
         )
@@ -205,6 +206,7 @@ public struct OpenApiYamlPackageGenerator {
         repeatedMultipartParts: Set<String>,
         optionalMultipartParts: Set<String>,
         textMultipartParts: Set<String>,
+        maxMultipartParts: [String: Int],
         _ yaml: inout OpenApiYamlWriter,
         context: OpenApiYamlRenderContext,
     ) {
@@ -247,6 +249,9 @@ public struct OpenApiYamlPackageGenerator {
                                         yaml.map(OpenApiYamlWriter.quotedKey(part)) {
                                             if repeatedMultipartParts.contains(part) {
                                                 yaml.scalar("type", "array")
+                                                if let maxItems = maxMultipartParts[part] {
+                                                    yaml.scalar("maxItems", maxItems)
+                                                }
                                                 yaml.map("items") {
                                                     yaml.scalar("type", "string")
                                                     if !textMultipartParts.contains(part) {

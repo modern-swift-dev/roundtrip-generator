@@ -56,6 +56,9 @@ public struct ApiOperation: Sendable {
     /// Multipart names whose wire content is text rather than binary.
     public let textMultipartParts: Set<String>
 
+    /// Maximum number of parts permitted for each repeated multipart name.
+    public let maxMultipartParts: [String: Int]
+
     /// The response type
     public let response: ApiResponseBody
 
@@ -99,6 +102,7 @@ public struct ApiOperation: Sendable {
         repeatedMultipartParts: Set<String> = [],
         optionalMultipartParts: Set<String> = [],
         textMultipartParts: Set<String> = [],
+        maxMultipartParts: [String: Int] = [:],
         response: ApiResponseBody,
         acceptableStatuses: [Int],
         clientOnlyAcceptableStatuses: [Int] = [],
@@ -114,6 +118,7 @@ public struct ApiOperation: Sendable {
         self.repeatedMultipartParts = repeatedMultipartParts
         self.optionalMultipartParts = optionalMultipartParts
         self.textMultipartParts = textMultipartParts
+        self.maxMultipartParts = maxMultipartParts
         self.response = response
         self.acceptableStatuses = acceptableStatuses
         self.clientOnlyAcceptableStatuses = clientOnlyAcceptableStatuses
@@ -143,6 +148,7 @@ public extension ApiOperation {
             repeatedMultipartParts: repeatedMultipartParts,
             optionalMultipartParts: optionalMultipartParts,
             textMultipartParts: textMultipartParts,
+            maxMultipartParts: maxMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
             clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
@@ -183,6 +189,7 @@ public extension ApiOperation {
             repeatedMultipartParts: repeatedMultipartParts,
             optionalMultipartParts: optionalMultipartParts,
             textMultipartParts: textMultipartParts,
+            maxMultipartParts: maxMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
             clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
@@ -221,6 +228,7 @@ public extension ApiOperation {
             repeatedMultipartParts: repeatedMultipartParts,
             optionalMultipartParts: optionalMultipartParts,
             textMultipartParts: textMultipartParts,
+            maxMultipartParts: maxMultipartParts,
             response: adaptedResponse,
             acceptableStatuses: acceptableStatuses,
             clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
@@ -246,6 +254,7 @@ public extension ApiOperation {
             repeatedMultipartParts: repeatedMultipartParts,
             optionalMultipartParts: optionalMultipartParts,
             textMultipartParts: textMultipartParts,
+            maxMultipartParts: maxMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
             clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
@@ -269,6 +278,7 @@ public extension ApiOperation {
             repeatedMultipartParts: repeatedMultipartParts,
             optionalMultipartParts: optionalMultipartParts,
             textMultipartParts: textMultipartParts,
+            maxMultipartParts: maxMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
             clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
@@ -290,6 +300,7 @@ public extension ApiOperation {
             repeatedMultipartParts: repeatedMultipartParts,
             optionalMultipartParts: optionalMultipartParts,
             textMultipartParts: textMultipartParts,
+            maxMultipartParts: maxMultipartParts,
             response: self.response,
             acceptableStatuses: acceptableStatuses,
             clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
@@ -311,6 +322,7 @@ public extension ApiOperation {
             repeatedMultipartParts: names,
             optionalMultipartParts: optionalMultipartParts,
             textMultipartParts: textMultipartParts,
+            maxMultipartParts: maxMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
             clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
@@ -332,6 +344,7 @@ public extension ApiOperation {
             repeatedMultipartParts: repeatedMultipartParts,
             optionalMultipartParts: names,
             textMultipartParts: textMultipartParts,
+            maxMultipartParts: maxMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
             clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
@@ -353,6 +366,29 @@ public extension ApiOperation {
             repeatedMultipartParts: repeatedMultipartParts,
             optionalMultipartParts: optionalMultipartParts,
             textMultipartParts: names,
+            maxMultipartParts: maxMultipartParts,
+            response: response,
+            acceptableStatuses: acceptableStatuses,
+            clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
+            successResponses: successResponses,
+            publicErrors: publicErrors,
+            extraImports: extraImports,
+        )
+    }
+
+    /// Sets maximum counts for repeated multipart names.
+    func withMaxMultipartParts(_ maximums: [String: Int]) -> ApiOperation {
+        .init(
+            name: name,
+            method: method,
+            path: path,
+            security: security,
+            parameters: parameters,
+            request: request,
+            repeatedMultipartParts: repeatedMultipartParts,
+            optionalMultipartParts: optionalMultipartParts,
+            textMultipartParts: textMultipartParts,
+            maxMultipartParts: maximums,
             response: response,
             acceptableStatuses: acceptableStatuses,
             clientOnlyAcceptableStatuses: clientOnlyAcceptableStatuses,
@@ -374,6 +410,7 @@ public extension ApiOperation {
             repeatedMultipartParts: repeatedMultipartParts,
             optionalMultipartParts: optionalMultipartParts,
             textMultipartParts: textMultipartParts,
+            maxMultipartParts: maxMultipartParts,
             response: response,
             acceptableStatuses: acceptableStatuses,
             clientOnlyAcceptableStatuses: statuses,

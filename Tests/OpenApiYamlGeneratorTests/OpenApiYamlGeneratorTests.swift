@@ -229,6 +229,7 @@ import Testing
         ).withRepeatedMultipartParts(["files"])
             .withOptionalMultipartParts(["files"])
             .withTextMultipartParts(["answers"])
+            .withMaxMultipartParts(["files": 5])
         let package = ApiPackage(
             name: "Feedback",
             targetDirUrl: URL(fileURLWithPath: "/unused"),
@@ -241,6 +242,7 @@ import Testing
         #expect(!required.contains("- \"files\""))
         let files = try #require(yaml.components(separatedBy: "files:\n").dropFirst().first?.components(separatedBy: "required:\n").first)
         #expect(files.contains("type: \"array\""))
+        #expect(files.contains("maxItems: 5"))
         let answers = try #require(yaml.components(separatedBy: "answers:\n").dropFirst().first?.components(separatedBy: "files:\n").first)
         #expect(answers.contains("type: \"string\""))
         #expect(!answers.contains("format: \"binary\""))
