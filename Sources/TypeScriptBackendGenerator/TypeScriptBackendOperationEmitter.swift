@@ -620,6 +620,8 @@ struct TypeScriptBackendRoutesEmitter {
             }
         }
         let handlers = operations.map { $0.handlerDeclaration() }.joined(separator: "\n")
+        let operationIds = operations.map(\.operationIdentifier.backendStringLiteral)
+        let operationIdType = operationIds.isEmpty ? "never" : "\n    | " + operationIds.joined(separator: "\n    | ")
         let fields = operations.map { $0.handlerField() }.joined(separator: "\n")
         let routes = operations.map { $0.registrationSource() }.joined(separator: "\n")
         let importedDataTypes: [ApiTypeSchema] = operations.flatMap { operation in
@@ -665,6 +667,8 @@ struct TypeScriptBackendRoutesEmitter {
         import {
             \(imports)
         } from "./models.js";
+
+        export type GeneratedOperationId = \(operationIdType);
 
         export type GeneratedSchemaBinding<Output = unknown, Input = unknown> = z.ZodType<Output, Input>;
 

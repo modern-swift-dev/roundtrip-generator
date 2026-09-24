@@ -835,6 +835,7 @@ struct TypeScriptBackendGeneratorTests {
         let runtime = try #require(files.first { $0.relativePath == "src/generated/runtime.ts" }?.contents)
 
         #expect(routes.contains("export interface GeneratedRequestPolicy<Context = unknown>"))
+        #expect(routes.contains("export type GeneratedOperationId =\n    | \"Admin.Users.Secured\"\n    | \"Admin.Users.Optional\"\n    | \"Admin.Users.Public\";"))
         #expect(routes.contains("export interface GeneratedRequestIntegration"))
         #expect(routes.contains("secured?: GeneratedRequestPolicy"))
         #expect(routes.contains("optional?: GeneratedRequestPolicy"))
