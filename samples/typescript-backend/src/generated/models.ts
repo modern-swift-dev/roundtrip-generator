@@ -6,6 +6,7 @@ import {
     isValidBase64,
     isValidISODate,
     isValidUUID,
+    lazySchema,
     parseDate,
     parseNarrowInteger,
     serializeDate,
@@ -37,21 +38,19 @@ export interface Profile {
     createdAt: Date;
 }
 
-export function ProfileWireSchema() {
-    return z.object({
-        "id": z.string().refine((value) => isValidUUID(value)),
-        "first_name": z.string(),
-        "biography": z.string().nullable().optional(),
-        "created_at": z.string().refine((value) => isValidISODate(value)),
-    });
-}
+export const ProfileWireSchema = lazySchema(() => z.object({
+    "id": z.string().refine((value) => isValidUUID(value)),
+    "first_name": z.string(),
+    "biography": z.string().nullable().optional(),
+    "created_at": z.string().refine((value) => isValidISODate(value)),
+}));
 
 export function decodeProfile(value: unknown): Profile {
     const object = ProfileWireSchema().parse(value) as Record<string, unknown>;
     return {
-        id: z.string().refine((value) => isValidUUID(value)).parse(object["id"]) as string,
-        firstName: z.string().parse(object["first_name"]) as string,
-        biography: (object["biography"] == null ? object["biography"] : z.string().parse(object["biography"]) as string),
+        id: object["id"] as string,
+        firstName: object["first_name"] as string,
+        biography: (object["biography"] == null ? object["biography"] : object["biography"] as string),
         createdAt: parseDate(object["created_at"]),
     };
 }
@@ -70,18 +69,16 @@ export interface ProfilePatch {
     biography?: { state: "unmodified" } | { state: "modified"; value: string | null };
 }
 
-export function ProfilePatchWireSchema() {
-    return z.object({
-        "first_name": z.string().nullable().optional(),
-        "biography": z.string().nullable().optional(),
-    });
-}
+export const ProfilePatchWireSchema = lazySchema(() => z.object({
+    "first_name": z.string().nullable().optional(),
+    "biography": z.string().nullable().optional(),
+}));
 
 export function decodeProfilePatch(value: unknown): ProfilePatch {
     const object = ProfilePatchWireSchema().parse(value) as Record<string, unknown>;
     return {
-        firstName: (object["first_name"] === undefined ? undefined : (() => { const patchValue = z.string().nullable().parse(object["first_name"]); return { state: "modified", value: patchValue == null ? null : z.string().parse(patchValue) as string }; })()),
-        biography: (object["biography"] === undefined ? undefined : (() => { const patchValue = z.string().nullable().parse(object["biography"]); return { state: "modified", value: patchValue == null ? null : z.string().parse(patchValue) as string }; })()),
+        firstName: (object["first_name"] === undefined ? undefined : (() => { const patchValue = object["first_name"]; return { state: "modified", value: patchValue == null ? null : patchValue as string }; })()),
+        biography: (object["biography"] === undefined ? undefined : (() => { const patchValue = object["biography"]; return { state: "modified", value: patchValue == null ? null : patchValue as string }; })()),
     };
 }
 
@@ -97,18 +94,16 @@ export interface PhotoReceipt {
     byteCount: number;
 }
 
-export function PhotoReceiptWireSchema() {
-    return z.object({
-        "profile_id": z.string().refine((value) => isValidUUID(value)),
-        "byte_count": z.union([z.number(), z.bigint()]).transform((value) => parseNarrowInteger(value, -2147483648n, 2147483647n)),
-    });
-}
+export const PhotoReceiptWireSchema = lazySchema(() => z.object({
+    "profile_id": z.string().refine((value) => isValidUUID(value)),
+    "byte_count": z.union([z.number(), z.bigint()]).transform((value) => parseNarrowInteger(value, -2147483648n, 2147483647n)),
+}));
 
 export function decodePhotoReceipt(value: unknown): PhotoReceipt {
     const object = PhotoReceiptWireSchema().parse(value) as Record<string, unknown>;
     return {
-        profileId: z.string().refine((value) => isValidUUID(value)).parse(object["profile_id"]) as string,
-        byteCount: z.union([z.number(), z.bigint()]).transform((value) => parseNarrowInteger(value, -2147483648n, 2147483647n)).parse(object["byte_count"]) as number,
+        profileId: object["profile_id"] as string,
+        byteCount: object["byte_count"] as number,
     };
 }
 
@@ -124,18 +119,16 @@ export interface LedgerBatch {
     totals: Record<string, bigint>;
 }
 
-export function LedgerBatchWireSchema() {
-    return z.object({
-        "entries": z.array(LedgerEntryWireSchema()),
-        "totals": z.record(z.string(), z.bigint().refine((value) => value >= 0n && value <= 18446744073709551615n)),
-    });
-}
+export const LedgerBatchWireSchema = lazySchema(() => z.object({
+    "entries": z.array(LedgerEntryWireSchema()),
+    "totals": z.record(z.string(), z.bigint().refine((value) => value >= 0n && value <= 18446744073709551615n)),
+}));
 
 export function decodeLedgerBatch(value: unknown): LedgerBatch {
     const object = LedgerBatchWireSchema().parse(value) as Record<string, unknown>;
     return {
         entries: (object["entries"] as unknown[]).map((item) => decodeLedgerEntry(item)),
-        totals: Object.fromEntries(Object.entries(object["totals"] as Record<string, unknown>).map(([key, item]) => [key, z.bigint().refine((value) => value >= 0n && value <= 18446744073709551615n).parse(item) as bigint])) as Record<string, bigint>,
+        totals: Object.fromEntries(Object.entries(object["totals"] as Record<string, unknown>).map(([key, item]) => [key, item as bigint])) as Record<string, bigint>,
     };
 }
 
@@ -153,20 +146,18 @@ export interface LedgerEntry {
     evidence: Uint8Array;
 }
 
-export function LedgerEntryWireSchema() {
-    return z.object({
-        "entry_name": z.string(),
-        "amount": z.bigint().refine((value) => value >= -9223372036854775808n && value <= 9223372036854775807n),
-        "captured_at": z.string().refine((value) => isValidISODate(value)),
-        "evidence": z.string().refine((value) => isValidBase64(value)),
-    });
-}
+export const LedgerEntryWireSchema = lazySchema(() => z.object({
+    "entry_name": z.string(),
+    "amount": z.bigint().refine((value) => value >= -9223372036854775808n && value <= 9223372036854775807n),
+    "captured_at": z.string().refine((value) => isValidISODate(value)),
+    "evidence": z.string().refine((value) => isValidBase64(value)),
+}));
 
 export function decodeLedgerEntry(value: unknown): LedgerEntry {
     const object = LedgerEntryWireSchema().parse(value) as Record<string, unknown>;
     return {
-        entryName: z.string().parse(object["entry_name"]) as string,
-        amount: z.bigint().refine((value) => value >= -9223372036854775808n && value <= 9223372036854775807n).parse(object["amount"]) as bigint,
+        entryName: object["entry_name"] as string,
+        amount: object["amount"] as bigint,
         capturedAt: parseDate(object["captured_at"]),
         evidence: base64ToUint8Array(object["evidence"]),
     };

@@ -813,6 +813,111 @@ struct TypeScriptBackendGeneratorTests {
         #expect(models.contains("nickname?: string | null;"))
     }
 
+    @Test func `generated backend builds each schema once instead of on every codec call`() throws {
+        let address = ApiTypeSchema.object(
+            typeName: "Address",
+            properties: [.string("street_name", propertyName: "streetName")],
+        )
+        let state = ApiTypeSchema.stringEnum(
+            typeName: "State",
+            values: [(name: "active", rawName: "active")],
+            initialValue: "active",
+            supportGarbage: false,
+        )
+        let message = ApiTypeSchema.object(typeName: "MessagePayload", properties: [.string("text")])
+        let event = ApiTypeSchema.dynamicObject(
+            typeName: "Event",
+            objectTypePropertyName: "kind",
+            objectDataPropertyName: "payload",
+            alternateObjectDataPropertyName: "data",
+            objectTypes: [(objectTypeName: "Message", objectTypeRawName: "message", objectType: message.asRef)],
+            supportGarbage: false,
+            extraProperties: [.int8("priority", required: false)],
+        )
+        let profile = ApiTypeSchema.object(
+            typeName: "Profile",
+            properties: [
+                .uuid("id"),
+                .int8("rank"),
+                .double("score"),
+                .date("created_at", propertyName: "createdAt"),
+                .ref("state", of: state),
+                .ref("event", of: event),
+                .arrayOfRef("addresses", of: address),
+                .keyedByString("totals", valueType: .int64(), required: false, valueOptional: true),
+                ApiModelProperty(rawName: "nickname", propertyName: "nickname", dataType: .string().asPatchable),
+                ApiModelProperty(rawName: "home", propertyName: "home", dataType: address.asPatchable),
+                ApiModelProperty(
+                    rawName: "history",
+                    propertyName: "history",
+                    dataType: .genericReference(typeName: "PagedResults", genericTypes: [address.asRef]),
+                )
+            ],
+        )
+        let operations = [
+            ApiOperation.post(
+                name: "create",
+                path: .relative("/profiles"),
+                security: .unsecured,
+                request: profile.asRef,
+                response: .array(profile.asRef),
+                acceptableStatuses: [200],
+            ),
+            ApiOperation.post(
+                name: "count",
+                path: .relative("/counts"),
+                security: .unsecured,
+                request: .int64(),
+                response: .keyedByString(.date()),
+                acceptableStatuses: [200],
+            )
+        ]
+        let package = ApiPackage(
+            name: "Example",
+            targetDirUrl: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+            modules: [
+                ApiModule(name: "Admin", definitions: [
+                    ApiService(name: "Users", operations: operations, references: [profile, address, state, event, message])
+                ])
+            ],
+            referencedModules: [],
+            references: [],
+            commonReferences: [],
+            imports: [],
+        )
+
+        let files = try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()
+        let models = try #require(files.first { $0.relativePath == "src/generated/models.ts" }?.contents)
+        let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+
+        #expect(models.contains("export const ProfileWireSchema = lazySchema(() => z.object({"))
+        #expect(models.contains(#""addresses": z.array(AddressWireSchema()),"#))
+        #expect(models.contains(#"id: object["id"] as string,"#))
+        #expect(models.contains(#"rank: object["rank"] as number,"#))
+        #expect(models.contains(#"priority: (object["priority"] == null ? object["priority"] : object["priority"] as number),"#))
+        #expect(models.contains(#"const patchValue = object["nickname"];"#))
+        #expect(schemaConstructionsOutsideLazySchemas(in: models).isEmpty)
+        #expect(schemaConstructionsOutsideLazySchemas(in: routes).isEmpty)
+    }
+
+    /// Returns each line that builds a Zod schema outside a top-level `lazySchema` declaration, i.e. at request time.
+    private func schemaConstructionsOutsideLazySchemas(in source: String) -> [String] {
+        let lines = source.components(separatedBy: "\n")
+        var declaration = ""
+        var violations: [String] = []
+        for line in lines {
+            if let first = line.first, !first.isWhitespace {
+                declaration = line
+            }
+            let buildsSchema = line.range(of: #"\bz\.[a-z]+\("#, options: .regularExpression) != nil
+            let isPagedResultsFactory = declaration.hasPrefix("export function PagedResultsWireSchema")
+            if buildsSchema, !declaration.contains("lazySchema("), !isPagedResultsFactory {
+                violations.append(line)
+            }
+        }
+        return violations
+    }
+
     @Test func generatedBackendExposesSecurityPoliciesTypedContextAndApplicationErrors() throws {
         let user = ApiTypeSchema.object(typeName: "User", properties: [.string("name")])
         let operations = [

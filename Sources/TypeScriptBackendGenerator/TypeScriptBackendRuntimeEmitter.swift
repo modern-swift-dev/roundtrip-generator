@@ -82,6 +82,11 @@ struct TypeScriptBackendRuntimeEmitter {
             return text;
         }
 
+        export function lazySchema<Schema>(build: () => Schema): () => Schema {
+            let schema: Schema | undefined;
+            return () => schema ??= build();
+        }
+
         export function isValidISODate(value: string): boolean {
             const format = /^\\d{4}-\\d{2}-\\d{2}T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|[+-](?:[01]\\d|2[0-3]):[0-5]\\d)$/;
             return format.test(value)

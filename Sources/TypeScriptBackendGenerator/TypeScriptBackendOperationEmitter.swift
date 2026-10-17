@@ -13,6 +13,7 @@ struct TypeScriptBackendOperationEmitter {
     let definition: ApiService
     let operation: ApiOperation
     let models: TypeScriptBackendModelEmitter
+    let schemas: TypeScriptBackendSchemaCache
 
     var operationTypeName: String {
         "\(module.name.backendTypeName)\(definition.name.backendTypeName)\(operation.name.backendTypeName)"
@@ -300,7 +301,7 @@ struct TypeScriptBackendOperationEmitter {
                 guard let dataType else {
                     return "decodedInput = undefined;"
                 }
-                let requestDecoder = models.decodeExpression(for: dataType, value: "parseJsonBody(request.body)")
+                let requestDecoder = models.decodeExpression(for: dataType, value: "parseJsonBody(request.body)", schemas: schemas)
                 return """
                 decodedInput = \(requestDecoder);
                 """
@@ -368,7 +369,7 @@ struct TypeScriptBackendOperationEmitter {
                 guard let dataType else {
                     return "\(requiredHeadersValidation)\n\(responseHeadersSource())\nresponse.status(output.status).end();"
                 }
-                let responseEncoder = models.encodeRootExpression(for: dataType, value: usesOutputBinding ? "publicOutput" : "publicErrorOutput")
+                let responseEncoder = models.encodeRootExpression(for: dataType, value: usesOutputBinding ? "publicOutput" : "publicErrorOutput", schemas: schemas)
                 if !usesOutputBinding {
                     let responseType = models.typeDeclaration(for: dataType)
                     return """
@@ -437,7 +438,7 @@ struct TypeScriptBackendOperationEmitter {
         let bodyLines: String = switch operation.request {
             case let .json(dataType):
                 dataType.map {
-                    "const body = \(models.decodeExpression(for: $0, value: "parseJsonBody(request.body)"));"
+                    "const body = \(models.decodeExpression(for: $0, value: "parseJsonBody(request.body)", schemas: schemas));"
                 } ?? "const body = undefined;"
             case .binary,
                  .file:
@@ -665,13 +666,14 @@ struct TypeScriptBackendRoutesEmitter {
     let models: TypeScriptBackendModelEmitter
 
     func source() -> String {
+        let schemas = TypeScriptBackendSchemaCache()
         let operations = package.modules.flatMap { module in
             module.definitions.flatMap { definition in
                 definition.operations.compactMap { operation -> TypeScriptBackendOperationEmitter? in
                     guard case .relative = operation.path else {
                         return nil
                     }
-                    return TypeScriptBackendOperationEmitter(module: module, definition: definition, operation: operation, models: models)
+                    return TypeScriptBackendOperationEmitter(module: module, definition: definition, operation: operation, models: models, schemas: schemas)
                 }
             }
         }
@@ -697,7 +699,8 @@ struct TypeScriptBackendRoutesEmitter {
             }
         }.uniqued()
         let publicErrorBodyType = publicErrorBodies.isEmpty ? "never" : publicErrorBodies.joined(separator: " | ")
-        let generatedContent = [handlers, fields, routes, publicErrorBodyType]
+        let schemaDeclarations = schemas.source()
+        let generatedContent = [handlers, fields, routes, publicErrorBodyType, schemaDeclarations]
             .joined(separator: "\n")
         let imports = importedSymbols
             .filter { symbol in
@@ -709,7 +712,7 @@ struct TypeScriptBackendRoutesEmitter {
             .joined(separator: ",\n    ")
         let runtimeImports = [
             "base64ToUint8Array", "isValidBase64", "isValidCalendarDate", "isValidISODate",
-            "isValidLocalTime", "isValidURL", "isValidUUID", "parseParameterArray",
+            "isValidLocalTime", "isValidURL", "isValidUUID", "lazySchema", "parseParameterArray",
             "parseParameterBigInt", "parseParameterBoolean", "parseParameterDate",
             "parseParameterDateTime", "parseParameterInteger", "parseParameterNarrowInteger",
             "parseParameterString", "parseParameterTime", "parseDate", "parseDouble",
@@ -731,7 +734,7 @@ struct TypeScriptBackendRoutesEmitter {
         import {
             \(imports)
         } from "./models.js";
-
+        \(schemaDeclarations.isEmpty ? "" : "\n" + schemaDeclarations + "\n")
         export type GeneratedOperationId = \(operationIdType);
 
         export type GeneratedSchemaBinding<Output = unknown, Input = unknown> = z.ZodType<Output, Input>;

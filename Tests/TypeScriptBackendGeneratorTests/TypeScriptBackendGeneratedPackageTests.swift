@@ -52,6 +52,49 @@ struct TypeScriptBackendGeneratedPackageTests {
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
+    func generatedModelsReuseOneWireSchemaPerType() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let address = ApiTypeSchema.object(typeName: "Address", properties: [.string("street_name", propertyName: "streetName")])
+        let profile = ApiTypeSchema.object(typeName: "Profile", properties: [
+            .uuid("id"),
+            .arrayOfRef("addresses", of: address)
+        ])
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/profiles"),
+            security: .unsecured,
+            request: profile.asRef,
+            response: profile.asRef,
+        )
+        let package = ApiPackage(
+            name: "SchemaReuse",
+            targetDirUrl: root,
+            modules: [ApiModule(name: "Profiles", definitions: [ApiService(name: "Profiles", operations: [operation], references: [profile, address])])],
+        )
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for file in try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles() {
+            try file.write(to: root)
+        }
+        try """
+        import assert from "node:assert/strict";
+        import { AddressWireSchema, ProfileWireSchema, decodeProfile, encodeProfile } from "./dist/generated/models.js";
+
+        assert.equal(ProfileWireSchema(), ProfileWireSchema());
+        assert.equal(ProfileWireSchema().shape.addresses.element, AddressWireSchema());
+        const wire = { id: "3f2504e0-4f89-11d3-9a0c-0305e82c3301", addresses: [{ street_name: "Main" }] };
+        assert.deepEqual(encodeProfile(decodeProfile(wire)), wire);
+        assert.throws(() => decodeProfile({ ...wire, id: "not-a-uuid" }));
+        assert.throws(() => decodeProfile({ ...wire, addresses: [{}] }));
+        """.write(to: root.appendingPathComponent("test.mjs"), atomically: true, encoding: .utf8)
+
+        try run(["install", "--ignore-scripts", "--package-lock=false"], in: root)
+        try run(["run", "build"], in: root)
+        try run(["exec", "--", "node", "test.mjs"], in: root)
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
     func generatedPackageCompilesAndServesItsRoute() throws {
         let dumpPath = ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_DUMP_PATH"]
         let root = dumpPath.map(URL.init(fileURLWithPath:)) ?? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

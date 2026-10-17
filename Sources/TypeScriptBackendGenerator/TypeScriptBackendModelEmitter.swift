@@ -3,13 +3,25 @@ import GeneratorBuilder
 import GeneratorModels
 
 struct TypeScriptBackendModelEmitter {
+    /// Whether a value being decoded has already been parsed by an enclosing wire schema.
+    enum WireValue {
+        case unvalidated
+        case validated
+    }
+
     let dataTypes: [ApiTypeSchema]
 
     func source() -> String {
-        let declarations = dataTypes.map { declaration(for: $0) }.joined(separator: "\n\n")
+        let schemas = TypeScriptBackendSchemaCache()
+        let declarations = [
+            dataTypes.map { declaration(for: $0, schemas: schemas) }.joined(separator: "\n\n"),
+            schemas.source()
+        ]
+        .filter { !$0.isEmpty }
+        .joined(separator: "\n\n")
         let runtimeImports = [
             "base64ToUint8Array", "isValidBase64", "isValidCalendarDate", "isValidISODate",
-            "isValidLocalTime", "isValidURL", "isValidUUID", "parseDate", "parseDouble",
+            "isValidLocalTime", "isValidURL", "isValidUUID", "lazySchema", "parseDate", "parseDouble",
             "parseNarrowInteger", "parseURL", "serializeDate", "serializeURL", "uint8ArrayToBase64"
         ]
         .filter(declarations.contains)
@@ -44,10 +56,10 @@ struct TypeScriptBackendModelEmitter {
         """
     }
 
-    private func declaration(for dataType: ApiTypeSchema) -> String {
+    private func declaration(for dataType: ApiTypeSchema, schemas: TypeScriptBackendSchemaCache) -> String {
         switch dataType {
             case let .object(typeName, properties, _, _, _, _):
-                objectDeclaration(typeName: typeName, properties: properties)
+                objectDeclaration(typeName: typeName, properties: properties, schemas: schemas)
             case let .stringEnum(typeName, values, _, _, _):
                 stringEnumDeclaration(typeName: typeName, values: values.map(\.rawName))
             case let .intEnum(typeName, values, _, _):
@@ -60,13 +72,14 @@ struct TypeScriptBackendModelEmitter {
                     alternateObjectDataPropertyName: alternateObjectDataPropertyName,
                     objectTypes: objectTypes,
                     extraProperties: extraProperties.filter(\.publishedAsField),
+                    schemas: schemas,
                 )
             default:
                 ""
         }
     }
 
-    private func objectDeclaration(typeName: String, properties: [ApiModelProperty]) -> String {
+    private func objectDeclaration(typeName: String, properties: [ApiModelProperty], schemas: TypeScriptBackendSchemaCache) -> String {
         let publishedProperties = properties.filter(\.publishedAsField)
         let encodeParameterName = publishedProperties.isEmpty ? "_value" : "value"
         let decodedObject = publishedProperties.isEmpty
@@ -86,19 +99,19 @@ struct TypeScriptBackendModelEmitter {
         }.joined(separator: "\n")
         let decodedFields = publishedProperties.map { property in
             let value = "object[\(property.rawName.backendStringLiteral)]"
-            let decoded = decodeExpression(for: property.dataType, value: value)
+            let decoded = decodeExpression(for: property.dataType, value: value, wireValue: .validated, schemas: schemas)
             let expression: String = if property.dataType.isBackendPatchableValue {
                 "(\(value) === undefined ? undefined : \(decoded))"
             } else if property.presence == .optionalNonNullable {
                 "(\(value) === undefined ? undefined : \(decoded))"
             } else {
-                decodeExpression(for: property.dataType, value: value, optional: !property.required)
+                decodeExpression(for: property.dataType, value: value, optional: !property.required, wireValue: .validated, schemas: schemas)
             }
             return "\(property.propertyName.backendPropertyName): \(expression),"
         }.joined(separator: "\n")
         let encodedFields = publishedProperties.map { property in
             let value = "value.\(property.propertyName.backendPropertyName)"
-            let encoded = encodeExpression(for: property.dataType, value: value)
+            let encoded = encodeExpression(for: property.dataType, value: value, schemas: schemas)
             let optional: String = if property.dataType.isBackendPatchableValue {
                 "(\(value) === undefined || String(\(value).state) === \"unmodified\" ? undefined : \(encoded))"
             } else if property.presence == .optionalNonNullable {
@@ -113,11 +126,9 @@ struct TypeScriptBackendModelEmitter {
         \(interfaceFields.prepad())
         }
 
-        export function \(typeName.backendTypeName)WireSchema() {
-            return z.object({
-        \(schemaFields.prepad(2))
-            });
-        }
+        export const \(typeName.backendTypeName)WireSchema = lazySchema(() => z.object({
+        \(schemaFields.prepad())
+        }));
 
         export function decode\(typeName.backendTypeName)(value: unknown): \(typeName.backendTypeName) {
             \(decodedObject)
@@ -140,9 +151,7 @@ struct TypeScriptBackendModelEmitter {
         return """
         export type \(typeName.backendTypeName) = \(literalValues);
 
-        export function \(typeName.backendTypeName)WireSchema() {
-            return z.enum([\(schemaValues)]);
-        }
+        export const \(typeName.backendTypeName)WireSchema = lazySchema(() => z.enum([\(schemaValues)]));
 
         export function decode\(typeName.backendTypeName)(value: unknown): \(typeName.backendTypeName) {
             return \(typeName.backendTypeName)WireSchema().parse(value);
@@ -162,9 +171,7 @@ struct TypeScriptBackendModelEmitter {
         return """
         export type \(typeName.backendTypeName) = \(literalValues);
 
-        export function \(typeName.backendTypeName)WireSchema() {
-            return \(schema);
-        }
+        export const \(typeName.backendTypeName)WireSchema = lazySchema(() => \(schema));
 
         export function decode\(typeName.backendTypeName)(value: unknown): \(typeName.backendTypeName) {
             return \(typeName.backendTypeName)WireSchema().parse(value);
@@ -192,6 +199,7 @@ struct TypeScriptBackendModelEmitter {
         alternateObjectDataPropertyName: String,
         objectTypes: [(objectTypeName: String, objectTypeRawName: String, objectType: ApiTypeSchema)],
         extraProperties: [ApiModelProperty],
+        schemas: TypeScriptBackendSchemaCache,
     ) -> String {
         let typeCases = objectTypes.map { objectType in
             let extraFields = extraProperties.map { property in
@@ -228,10 +236,10 @@ struct TypeScriptBackendModelEmitter {
             let payloadSource = objectDataPropertyName == "__self__"
                 ? "value"
                 : "(object[\(objectDataPropertyName.backendStringLiteral)] ?? object[\(alternateObjectDataPropertyName.backendStringLiteral)])"
-            let payload = decodeExpression(for: objectType.objectType, value: payloadSource)
+            let payload = decodeExpression(for: objectType.objectType, value: payloadSource, schemas: schemas)
             let extras = extraProperties.map { property in
                 let value = "object[\(property.rawName.backendStringLiteral)]"
-                let decoded = decodeExpression(for: property.dataType, value: value, optional: property.presence == .optionalNullable)
+                let decoded = decodeExpression(for: property.dataType, value: value, optional: property.presence == .optionalNullable, wireValue: .validated, schemas: schemas)
                 let expression = property.presence == .optionalNonNullable
                     ? "(\(value) === undefined ? undefined : \(decoded))"
                     : decoded
@@ -250,14 +258,14 @@ struct TypeScriptBackendModelEmitter {
         let encoderCases = objectTypes.map { objectType in
             let extras = extraProperties.map { property in
                 let value = "value.\(property.propertyName.backendPropertyName)"
-                let encoded = encodeExpression(for: property.dataType, value: value)
+                let encoded = encodeExpression(for: property.dataType, value: value, schemas: schemas)
                 if property.required {
                     return "output[\(property.rawName.backendStringLiteral)] = \(encoded);"
                 }
                 let expression = property.presence == .optionalNullable ? "\(value) === null ? null : \(encoded)" : encoded
                 return "if (\(value) !== undefined) { output[\(property.rawName.backendStringLiteral)] = \(expression); }"
             }.joined(separator: "\n")
-            let payload = "\(schemaExpression(for: objectType.objectType)).parse(\(encodeExpression(for: objectType.objectType, value: "value.payload")))"
+            let payload = "\(cachedSchemaExpression(for: objectType.objectType, schemas: schemas)).parse(\(encodeExpression(for: objectType.objectType, value: "value.payload", schemas: schemas)))"
             let payloadLine = objectDataPropertyName == "__self__"
                 ? "Object.assign(output, \(payload));"
                 : "output[\(objectDataPropertyName.backendStringLiteral)] = \(payload);"
@@ -274,9 +282,7 @@ struct TypeScriptBackendModelEmitter {
         export type \(typeName.backendTypeName) =
             | \(typeCases);
 
-        export function \(typeName.backendTypeName)WireSchema() {
-            return \(wireSchema);
-        }
+        export const \(typeName.backendTypeName)WireSchema = lazySchema(() => \(wireSchema));
 
         export function decode\(typeName.backendTypeName)(value: unknown): \(typeName.backendTypeName) {
             const object = \(typeName.backendTypeName)WireSchema().parse(value) as Record<string, unknown>;
@@ -412,7 +418,22 @@ struct TypeScriptBackendModelEmitter {
         }
     }
 
-    func decodeExpression(for dataType: ApiTypeSchema, value: String, optional: Bool = false) -> String {
+    /// A schema expression that is cheap to evaluate per call: named types are already shared, everything else goes through `schemas`.
+    private func cachedSchemaExpression(for dataType: ApiTypeSchema, schemas: TypeScriptBackendSchemaCache) -> String {
+        switch dataType {
+            case .object,
+                 .stringEnum,
+                 .intEnum,
+                 .dynamicObject:
+                schemaExpression(for: dataType)
+            case let .reference(_, _, _, _, resolved?):
+                cachedSchemaExpression(for: resolved, schemas: schemas)
+            default:
+                schemas.reference(to: schemaExpression(for: dataType))
+        }
+    }
+
+    func decodeExpression(for dataType: ApiTypeSchema, value: String, optional: Bool = false, wireValue: WireValue = .unvalidated, schemas: TypeScriptBackendSchemaCache) -> String {
         let expression: String
         switch dataType {
             case .uuid,
@@ -431,7 +452,10 @@ struct TypeScriptBackendModelEmitter {
                  .uint32,
                  .uint64,
                  .double:
-                expression = "\(schemaExpression(for: dataType)).parse(\(value)) as \(typeDeclaration(for: dataType))"
+                expression = switch wireValue {
+                    case .unvalidated: "\(cachedSchemaExpression(for: dataType, schemas: schemas)).parse(\(value)) as \(typeDeclaration(for: dataType))"
+                    case .validated: "\(value) as \(typeDeclaration(for: dataType))"
+                }
             case .date:
                 expression = "parseDate(\(value))"
             case .url:
@@ -439,9 +463,9 @@ struct TypeScriptBackendModelEmitter {
             case .binary:
                 expression = "base64ToUint8Array(\(value))"
             case let .array(type):
-                expression = "(\(value) as unknown[]).map((item) => \(decodeExpression(for: type, value: "item")))"
+                expression = "(\(value) as unknown[]).map((item) => \(decodeExpression(for: type, value: "item", wireValue: wireValue, schemas: schemas)))"
             case let .keyedByString(type, isOptional):
-                let item = decodeExpression(for: type, value: "item", optional: isOptional)
+                let item = decodeExpression(for: type, value: "item", optional: isOptional, wireValue: wireValue, schemas: schemas)
                 expression = "Object.fromEntries(Object.entries(\(value) as Record<string, unknown>).map(([key, item]) => [key, \(item)])) as \(typeDeclaration(for: dataType))"
             case let .object(typeName, _, _, _, _, _),
                  let .stringEnum(typeName, _, _, _, _),
@@ -449,15 +473,22 @@ struct TypeScriptBackendModelEmitter {
                  let .dynamicObject(typeName, _, _, _, _, _, _, _, _):
                 expression = "decode\(typeName.backendTypeName)(\(value))"
             case let .reference(_, _, _, _, dataType):
-                expression = dataType.map { decodeExpression(for: $0, value: value) } ?? "\(value) as unknown"
+                expression = dataType.map { decodeExpression(for: $0, value: value, wireValue: wireValue, schemas: schemas) } ?? "\(value) as unknown"
             case let .genericReference(typeName, types):
                 if typeName == "PatchableValue", let valueType = types.first {
-                    let patchValue = "\(schemaExpression(for: dataType)).parse(\(value))"
-                    let decodedValue = "patchValue == null ? null : \(decodeExpression(for: valueType, value: "patchValue"))"
+                    let patchValue = switch wireValue {
+                        case .unvalidated: "\(cachedSchemaExpression(for: dataType, schemas: schemas)).parse(\(value))"
+                        case .validated: value
+                    }
+                    let decodedValue = "patchValue == null ? null : \(decodeExpression(for: valueType, value: "patchValue", wireValue: .validated, schemas: schemas))"
                     expression = "(() => { const patchValue = \(patchValue); return { state: \"modified\", value: \(decodedValue) }; })()"
                 } else if typeName == "PagedResults", let valueType = types.first {
-                    let decodedItem = decodeExpression(for: valueType, value: "item")
-                    expression = "(() => { const pagedResultsObject = \(schemaExpression(for: dataType)).parse(\(value)) as { results: unknown[]; next?: string | null; count?: number | null }; return { results: pagedResultsObject.results.map((item) => \(decodedItem)), next: pagedResultsObject.next, count: pagedResultsObject.count }; })()"
+                    let decodedItem = decodeExpression(for: valueType, value: "item", wireValue: .validated, schemas: schemas)
+                    let pagedResults = switch wireValue {
+                        case .unvalidated: "\(cachedSchemaExpression(for: dataType, schemas: schemas)).parse(\(value))"
+                        case .validated: value
+                    }
+                    expression = "(() => { const pagedResultsObject = \(pagedResults) as { results: unknown[]; next?: string | null; count?: number | null }; return { results: pagedResultsObject.results.map((item) => \(decodedItem)), next: pagedResultsObject.next, count: pagedResultsObject.count }; })()"
                 } else {
                     expression = "\(value) as \(typeDeclaration(for: dataType))"
                 }
@@ -465,7 +496,7 @@ struct TypeScriptBackendModelEmitter {
         return optional ? "(\(value) == null ? \(value) : \(expression))" : expression
     }
 
-    func encodeExpression(for dataType: ApiTypeSchema, value: String) -> String {
+    func encodeExpression(for dataType: ApiTypeSchema, value: String, schemas: TypeScriptBackendSchemaCache) -> String {
         switch dataType {
             case .date:
                 return "serializeDate(\(value))"
@@ -474,10 +505,10 @@ struct TypeScriptBackendModelEmitter {
             case .binary:
                 return "uint8ArrayToBase64(\(value))"
             case let .array(type):
-                return "\(value).map((item) => \(encodeExpression(for: type, value: "item")))"
+                return "\(value).map((item) => \(encodeExpression(for: type, value: "item", schemas: schemas)))"
             case let .keyedByString(type, isOptional):
                 let itemValue = "(item as \(typeDeclaration(for: type)))"
-                let encoded = encodeExpression(for: type, value: itemValue)
+                let encoded = encodeExpression(for: type, value: itemValue, schemas: schemas)
                 let item = isOptional ? "(item == null ? item : \(encoded))" : encoded
                 return "Object.fromEntries(Object.entries(\(value)).map(([key, item]) => [key, \(item)]))"
             case let .object(typeName, _, _, _, _, _),
@@ -486,25 +517,25 @@ struct TypeScriptBackendModelEmitter {
                  let .dynamicObject(typeName, _, _, _, _, _, _, _, _):
                 return "encode\(typeName.backendTypeName)(\(value))"
             case let .reference(_, _, _, _, dataType):
-                return dataType.map { encodeExpression(for: $0, value: value) } ?? value
+                return dataType.map { encodeExpression(for: $0, value: value, schemas: schemas) } ?? value
             case let .genericReference(typeName, types) where typeName == "PatchableValue":
                 guard let valueType = types.first else {
                     return value
                 }
-                let encodedValue = encodeExpression(for: valueType, value: "\(value).value")
+                let encodedValue = encodeExpression(for: valueType, value: "\(value).value", schemas: schemas)
                 return "(\(value).state === \"unmodified\" ? undefined : \(value).value == null ? null : \(encodedValue))"
             case let .genericReference(typeName, types) where typeName == "PagedResults":
                 guard let valueType = types.first else {
                     return value
                 }
-                let encodedItem = encodeExpression(for: valueType, value: "item")
-                return "PagedResultsWireSchema(\(schemaExpression(for: valueType))).parse({ results: \(value).results.map((item) => \(encodedItem)), next: \(value).next, count: \(value).count })"
+                let encodedItem = encodeExpression(for: valueType, value: "item", schemas: schemas)
+                return "\(cachedSchemaExpression(for: dataType, schemas: schemas)).parse({ results: \(value).results.map((item) => \(encodedItem)), next: \(value).next, count: \(value).count })"
             default:
                 return value
         }
     }
 
-    func encodeRootExpression(for dataType: ApiTypeSchema, value: String) -> String {
+    func encodeRootExpression(for dataType: ApiTypeSchema, value: String, schemas: TypeScriptBackendSchemaCache) -> String {
         switch dataType {
             case .uuid,
                  .string,
@@ -522,20 +553,20 @@ struct TypeScriptBackendModelEmitter {
                  .uint32,
                  .uint64,
                  .double:
-                "\(schemaExpression(for: dataType)).parse(\(value))"
+                "\(cachedSchemaExpression(for: dataType, schemas: schemas)).parse(\(value))"
             case .date,
                  .url,
                  .binary:
-                "\(schemaExpression(for: dataType)).parse(\(encodeExpression(for: dataType, value: value)))"
+                "\(cachedSchemaExpression(for: dataType, schemas: schemas)).parse(\(encodeExpression(for: dataType, value: value, schemas: schemas)))"
             case .array,
                  .keyedByString:
-                "\(schemaExpression(for: dataType)).parse(\(encodeExpression(for: dataType, value: value)))"
+                "\(cachedSchemaExpression(for: dataType, schemas: schemas)).parse(\(encodeExpression(for: dataType, value: value, schemas: schemas)))"
             case let .reference(_, _, _, _, resolved):
-                resolved.map { encodeRootExpression(for: $0, value: value) } ?? encodeExpression(for: dataType, value: value)
+                resolved.map { encodeRootExpression(for: $0, value: value, schemas: schemas) } ?? encodeExpression(for: dataType, value: value, schemas: schemas)
             case let .genericReference(typeName, _) where typeName == "PatchableValue":
-                "\(schemaExpression(for: dataType)).parse(\(encodeExpression(for: dataType, value: value)))"
+                "\(cachedSchemaExpression(for: dataType, schemas: schemas)).parse(\(encodeExpression(for: dataType, value: value, schemas: schemas)))"
             default:
-                encodeExpression(for: dataType, value: value)
+                encodeExpression(for: dataType, value: value, schemas: schemas)
         }
     }
 
