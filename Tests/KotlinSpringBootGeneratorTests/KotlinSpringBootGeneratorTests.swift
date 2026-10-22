@@ -1531,7 +1531,9 @@ import Testing
         #expect(runtime.contains("private fun isBodyAllowed(status: HttpStatusCode): Boolean"))
         #expect(runtime.contains("return code !in 100..199 && code != 204 && code != 205 && code != 304"))
         #expect(runtime.contains("require(response.status.value() in validStatusCodes)"))
-        #expect(runtime.contains("HttpHeaders(headers).apply { contentType = mediaType }"))
+        // Since Spring 7, `HttpHeaders(HttpHeaders)` writes through to the supplied headers; only `copyOf` copies.
+        #expect(runtime.contains("HttpHeaders.copyOf(headers).apply { contentType = mediaType }"))
+        #expect(!runtime.contains("= HttpHeaders(headers)"))
         #expect(runtime.contains("if (!isBodyAllowed(response.status))"))
         #expect(runtime.contains(".headers(headersWithContentType(response.headers, mediaType))"))
         #expect(runtime.contains(".body(requireNotNull(response.body) { \"Missing response body for status ${response.status.value()}\" })"))

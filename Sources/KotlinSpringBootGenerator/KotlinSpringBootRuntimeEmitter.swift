@@ -60,7 +60,7 @@ struct KotlinSpringBootRuntimeEmitter {
                     private fun headersWithContentType(
                         headers: HttpHeaders,
                         mediaType: MediaType,
-                    ): HttpHeaders = HttpHeaders(headers).apply { contentType = mediaType }
+                    ): HttpHeaders = HttpHeaders.copyOf(headers).apply { contentType = mediaType }
 
                     private fun validateStatus(
                         response: GeneratedResponse<*>,
