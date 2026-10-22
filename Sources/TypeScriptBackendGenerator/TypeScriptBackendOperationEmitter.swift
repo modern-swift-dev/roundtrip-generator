@@ -711,7 +711,7 @@ struct TypeScriptBackendRoutesEmitter {
             }
             .joined(separator: ",\n    ")
         let runtimeImports = [
-            "base64ToUint8Array", "isValidBase64", "isValidCalendarDate", "isValidISODate",
+            "base64ToUint8Array", "decodeValidBase64", "isValidBase64", "isValidCalendarDate", "isValidISODate",
             "isValidLocalTime", "isValidURL", "isValidUUID", "lazySchema", "parseParameterArray",
             "parseParameterBigInt", "parseParameterBoolean", "parseParameterDate",
             "parseParameterDateTime", "parseParameterInteger", "parseParameterNarrowInteger",
@@ -876,8 +876,16 @@ struct TypeScriptBackendRoutesEmitter {
         switch dataType {
             case let .reference(_, _, _, _, dataType):
                 dataType.map(codecImports(for:)) ?? []
-            case let .object(typeName, _, _, _, _, _),
-                 let .stringEnum(typeName, _, _, _, _),
+            case let .object(typeName, _, _, _, _, _):
+                [
+                    "decode\(typeName.backendTypeName)",
+                    "decodeValidated\(typeName.backendTypeName)",
+                    "encode\(typeName.backendTypeName)",
+                    "encodeUnvalidated\(typeName.backendTypeName)",
+                    "\(typeName.backendTypeName)WireSchema",
+                    "type \(typeName.backendTypeName)"
+                ]
+            case let .stringEnum(typeName, _, _, _, _),
                  let .intEnum(typeName, _, _, _),
                  let .dynamicObject(typeName, _, _, _, _, _, _, _, _):
                 [

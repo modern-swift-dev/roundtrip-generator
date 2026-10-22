@@ -600,7 +600,8 @@ struct TypeScriptBackendGeneratorTests {
         let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
 
         #expect(routes.contains("decodeAddress"))
-        #expect(routes.contains("encodeAddress"))
+        #expect(routes.contains("encodeUnvalidatedAddress,"))
+        #expect(routes.contains("encodeUnvalidatedAddress((item as Address))"))
         #expect(routes.contains("type Address"))
     }
 
@@ -898,6 +899,93 @@ struct TypeScriptBackendGeneratorTests {
         #expect(models.contains(#"const patchValue = object["nickname"];"#))
         #expect(schemaConstructionsOutsideLazySchemas(in: models).isEmpty)
         #expect(schemaConstructionsOutsideLazySchemas(in: routes).isEmpty)
+    }
+
+    @Test func `generated backend validates nested values once instead of once per enclosing schema`() throws {
+        let address = ApiTypeSchema.object(
+            typeName: "Address",
+            properties: [.string("street_name", propertyName: "streetName"), .binary("photo"), .url("website")],
+        )
+        let state = ApiTypeSchema.stringEnum(
+            typeName: "State",
+            values: [(name: "active", rawName: "active")],
+            initialValue: "active",
+            supportGarbage: false,
+        )
+        let message = ApiTypeSchema.object(typeName: "MessagePayload", properties: [.string("text")])
+        let event = ApiTypeSchema.dynamicObject(
+            typeName: "Event",
+            objectTypePropertyName: "kind",
+            objectDataPropertyName: "payload",
+            alternateObjectDataPropertyName: "data",
+            objectTypes: [(objectTypeName: "Message", objectTypeRawName: "message", objectType: message.asRef)],
+            supportGarbage: false,
+            extraProperties: [.ref("state", of: state)],
+        )
+        let profile = ApiTypeSchema.object(
+            typeName: "Profile",
+            properties: [
+                .date("created_at", propertyName: "createdAt"),
+                .ref("state", of: state),
+                .ref("event", of: event),
+                .arrayOfRef("addresses", of: address),
+                ApiModelProperty(rawName: "home", propertyName: "home", dataType: address.asPatchable),
+                ApiModelProperty(
+                    rawName: "history",
+                    propertyName: "history",
+                    dataType: .genericReference(typeName: "PagedResults", genericTypes: [address.asRef]),
+                )
+            ],
+        )
+        let operation = ApiOperation.post(
+            name: "create",
+            path: .relative("/profiles"),
+            security: .unsecured,
+            request: profile.asRef,
+            response: .array(profile.asRef),
+            acceptableStatuses: [200],
+        )
+        let package = ApiPackage(
+            name: "Example",
+            targetDirUrl: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+            modules: [
+                ApiModule(name: "Admin", definitions: [
+                    ApiService(name: "Users", operations: [operation], references: [profile, address, state, event, message])
+                ])
+            ],
+            referencedModules: [],
+            references: [],
+            commonReferences: [],
+            imports: [],
+        )
+
+        let files = try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles()
+        let models = try #require(files.first { $0.relativePath == "src/generated/models.ts" }?.contents)
+        let routes = try #require(files.first { $0.relativePath == "src/generated/routes.ts" }?.contents)
+
+        // Decoders trust what the enclosing wire schema already parsed.
+        #expect(models.contains("return decodeValidatedProfile(ProfileWireSchema().parse(value));"))
+        #expect(models.contains(#"createdAt: new Date(object["created_at"] as string),"#))
+        #expect(models.contains(#"photo: decodeValidBase64(object["photo"] as string),"#))
+        #expect(models.contains(#"website: new URL(object["website"] as string),"#))
+        #expect(models.contains(#"state: object["state"] as State,"#))
+        #expect(models.contains(#"addresses: (object["addresses"] as unknown[]).map((item) => decodeValidatedAddress(item)),"#))
+        #expect(models.contains("patchValue == null ? null : decodeValidatedAddress(patchValue)"))
+        #expect(models.contains("pagedResultsObject.results.map((item) => decodeValidatedAddress(item))"))
+        // A dynamic object's wire schema leaves its payload unvalidated, so it still parses itself.
+        #expect(models.contains(#"event: decodeEvent(object["event"]),"#))
+
+        // Encoders leave validation to the outermost wire schema.
+        #expect(models.contains("return ProfileWireSchema().parse(encodeUnvalidatedProfile(value));"))
+        #expect(models.contains(#""state": value.state,"#))
+        #expect(models.contains(#""addresses": value.addresses.map((item) => encodeUnvalidatedAddress(item)),"#))
+        #expect(models.contains("encodeUnvalidatedAddress(value.home.value)"))
+        #expect(models.contains("{ results: value.history.results.map((item) => encodeUnvalidatedAddress(item)), next: value.history.next, count: value.history.count }"))
+        #expect(!models.contains(".parse({ results:"))
+        #expect(models.contains(#""event": encodeEvent(value.event),"#))
+        #expect(models.contains(#"output["payload"] = MessagePayloadWireSchema().parse(encodeUnvalidatedMessagePayload(value.payload));"#))
+        #expect(models.contains(#"output["state"] = value.state;"#))
+        #expect(routes.contains(".parse(publicOutput.map((item) => encodeUnvalidatedProfile(item)))"))
     }
 
     /// Returns each line that builds a Zod schema outside a top-level `lazySchema` declaration, i.e. at request time.

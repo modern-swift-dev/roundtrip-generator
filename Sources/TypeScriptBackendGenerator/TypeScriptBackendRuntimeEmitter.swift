@@ -139,6 +139,11 @@ struct TypeScriptBackendRuntimeEmitter {
             if (typeof value !== "string" || !isValidBase64(value)) {
                 throw new Error("Invalid base64 value");
             }
+            return decodeValidBase64(value);
+        }
+
+        /** Decodes base64 that `isValidBase64` has already accepted. */
+        export function decodeValidBase64(value: string): Uint8Array {
             const binary = atob(value);
             const bytes = new Uint8Array(binary.length);
             for (let index = 0; index < binary.length; index += 1) {
