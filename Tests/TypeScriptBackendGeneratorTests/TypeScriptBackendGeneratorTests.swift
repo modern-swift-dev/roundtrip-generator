@@ -605,6 +605,42 @@ struct TypeScriptBackendGeneratorTests {
         #expect(routes.contains("type Address"))
     }
 
+    @Test func `generated backend imports codecs for root generic bodies`() throws {
+        let address = ApiTypeSchema.object(
+            typeName: "Address",
+            properties: [.string("street_name", propertyName: "streetName")],
+        )
+        let operation = ApiOperation.get(
+            name: "list",
+            path: .relative("/addresses"),
+            security: .unsecured,
+            response: .genericReference(typeName: "PagedResults", genericTypes: [address.asRef]),
+        )
+        let patchOperation = ApiOperation.patch(
+            name: "patchHome",
+            path: .relative("/addresses/home"),
+            security: .unsecured,
+            request: address.asPatchable,
+        )
+
+        let pagedRoutes = try #require(
+            TypeScriptBackendApiPackageGenerator(package: testPackage(operation: operation, references: [address]))
+                .generatedFiles().first { $0.relativePath == "src/generated/routes.ts" }?.contents,
+        )
+        let patchRoutes = try #require(
+            TypeScriptBackendApiPackageGenerator(package: testPackage(operation: patchOperation, references: [address]))
+                .generatedFiles().first { $0.relativePath == "src/generated/routes.ts" }?.contents,
+        )
+
+        #expect(pagedRoutes.contains("\n    PagedResultsWireSchema,"))
+        #expect(pagedRoutes.contains("\n    AddressWireSchema,"))
+        #expect(pagedRoutes.contains("\n    encodeUnvalidatedAddress,"))
+        #expect(pagedRoutes.contains("\n    type PagedResults\n"))
+        #expect(pagedRoutes.contains("\n    type Address,"))
+        #expect(patchRoutes.contains("\n    AddressWireSchema,"))
+        #expect(patchRoutes.contains("\n    decodeValidatedAddress,"))
+    }
+
     @Test func generatedBackendRejectsNormalizedTypeNameCollisions() {
         let upper = ApiTypeSchema.object(typeName: "Foo", properties: [])
         let lower = ApiTypeSchema.object(typeName: "foo", properties: [])

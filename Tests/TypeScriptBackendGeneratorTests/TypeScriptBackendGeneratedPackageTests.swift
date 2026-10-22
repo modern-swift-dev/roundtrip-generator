@@ -302,6 +302,34 @@ struct TypeScriptBackendGeneratedPackageTests {
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
+    func generatedPackageServesRootGenericBodies() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let address = ApiTypeSchema.object(typeName: "Address", properties: [.string("street_name", propertyName: "streetName")])
+        let pagedAddresses = ApiTypeSchema.genericReference(typeName: "PagedResults", genericTypes: [address.asRef])
+        let operations = [
+            ApiOperation.get(name: "list", path: .relative("/addresses"), security: .unsecured, response: pagedAddresses),
+            ApiOperation.post(name: "importPage", path: .relative("/addresses/import"), security: .unsecured, request: pagedAddresses, response: .array(address.asRef)),
+            ApiOperation.patch(name: "patchHome", path: .relative("/addresses/home"), security: .unsecured, request: address.asPatchable, response: address.asRef)
+        ]
+        let package = ApiPackage(
+            name: "Places",
+            targetDirUrl: root,
+            modules: [ApiModule(name: "Places", definitions: [ApiService(name: "Addresses", operations: operations, references: [address])])],
+        )
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for file in try TypeScriptBackendApiPackageGenerator(package: package).generatedFiles() {
+            try file.write(to: root)
+        }
+        try rootGenericBodiesRuntimeTest().write(to: root.appendingPathComponent("test.mjs"), atomically: true, encoding: .utf8)
+
+        try run(["install", "--ignore-scripts", "--package-lock=false"], in: root)
+        try run(["run", "build"], in: root)
+        try run(["exec", "--", "node", "test.mjs"], in: root)
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["ROUNDTRIP_BACKEND_RUNTIME_TEST"] != nil))
     func generatedPackageServesDeclaredPublicErrors() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -825,6 +853,50 @@ struct TypeScriptBackendGeneratedPackageTests {
             assert.equal(missingLocation.status, 500);
             const invalidBody = await fetch(`http://127.0.0.1:${address.port}/receipts/invalid-body`, { redirect: "manual" });
             assert.equal(invalidBody.status, 500);
+        } finally {
+            await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        }
+        """
+    }
+
+    private func rootGenericBodiesRuntimeTest() -> String {
+        """
+        import assert from "node:assert/strict";
+        import express from "express";
+        import { z } from "zod";
+        import { registerGeneratedRoutes } from "./dist/generated/routes.js";
+
+        // Generic types such as PagedResults require application-provided schema bindings (ADR-0001).
+        const page = z.object({ results: z.array(z.object({ streetName: z.string() })), next: z.string().nullable().optional(), count: z.number().nullable().optional() });
+        const app = express();
+        registerGeneratedRoutes(app, {
+            placesAddressesList: async () => ({ results: [{ streetName: "Main" }], next: null, count: 1 }),
+            placesAddressesImportPage: async (input) => input.results,
+            placesAddressesPatchHome: async (patch) => patch.state === "modified" && patch.value !== null ? patch.value : { streetName: "none" }
+        }, {
+            placesAddressesList: { output: page },
+            placesAddressesImportPage: { input: page }
+        });
+        const server = app.listen(0);
+        await new Promise((resolve) => server.once("listening", resolve));
+        try {
+            const base = `http://127.0.0.1:${server.address().port}/addresses`;
+            const post = (path, method, body) => fetch(`${base}${path}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+            const list = await fetch(base);
+            assert.equal(list.status, 200);
+            assert.deepEqual(await list.json(), { results: [{ street_name: "Main" }], next: null, count: 1 });
+
+            const imported = await post("/import", "POST", { results: [{ street_name: "Side" }], count: 1 });
+            assert.equal(imported.status, 200);
+            assert.deepEqual(await imported.json(), [{ street_name: "Side" }]);
+            assert.notEqual((await post("/import", "POST", { results: [{}] })).status, 200);
+
+            const patched = await post("/home", "PATCH", { street_name: "Home" });
+            assert.equal(patched.status, 200);
+            assert.deepEqual(await patched.json(), { street_name: "Home" });
+            const cleared = await post("/home", "PATCH", null);
+            assert.deepEqual(await cleared.json(), { street_name: "none" });
         } finally {
             await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
         }

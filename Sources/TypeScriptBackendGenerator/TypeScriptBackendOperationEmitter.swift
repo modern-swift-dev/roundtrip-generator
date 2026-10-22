@@ -897,6 +897,10 @@ struct TypeScriptBackendRoutesEmitter {
             case let .array(type),
                  let .keyedByString(type, _):
                 codecImports(for: type)
+            case let .genericReference(typeName, types) where typeName == "PagedResults":
+                ["PagedResultsWireSchema", "type PagedResults"] + types.flatMap { codecImports(for: $0) ?? [] }
+            case let .genericReference(typeName, types) where typeName == "PatchableValue":
+                types.flatMap { codecImports(for: $0) ?? [] }
             default:
                 nil
         }
