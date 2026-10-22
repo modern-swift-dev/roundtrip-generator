@@ -828,6 +828,18 @@ import Testing
         #expect(optionalAuthorizationRange.lowerBound < bodyDecodeRange.lowerBound)
     }
 
+    @Test func `unsecured routes do not build a security request`() throws {
+        let controller = try #require(
+            SwiftVaporApiPackageGenerator(package: testPackage()).generatedFiles().first {
+                $0.relativePath == "Sources/App/Generated/Controllers/AdminUsersController.generated.swift"
+            },
+        )
+
+        #expect(controller.contents.components(separatedBy: "GeneratedSecurityRequest(request: req").count - 1 == 2)
+        #expect(!controller.contents.contains("operationID: \"Admin.Users.Delete\""))
+        #expect(!controller.contents.contains("_ = securityRequest"))
+    }
+
     @Test func `patchable request models decode missing null and value distinctly`() throws {
         let patch = ApiTypeSchema.object(
             typeName: "Patch",

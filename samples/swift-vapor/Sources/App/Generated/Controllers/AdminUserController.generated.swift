@@ -21,8 +21,6 @@ public struct AdminUserController: Sendable {
     }
 
     private func create(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.User.Create")
-        _ = securityRequest
         let body = try req.content.decode(AdminUserUser.self)
         let serviceRequest = AdminUserCreateOperationRequest(
             body: body,
@@ -32,8 +30,6 @@ public struct AdminUserController: Sendable {
     }
 
     private func update(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.User.Update")
-        _ = securityRequest
         let userId = try GeneratedRequestValueParser.required(req.parameters.get("user_id"), name: "user_id", as: Int64.self)
         let body = try req.content.decode(AdminUserUser.self)
         let serviceRequest = AdminUserUpdateOperationRequest(
@@ -45,8 +41,6 @@ public struct AdminUserController: Sendable {
     }
 
     private func patch(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.User.Patch")
-        _ = securityRequest
         let userId = try GeneratedRequestValueParser.required(req.parameters.get("user_id"), name: "user_id", as: Int64.self)
         let body = try req.content.decode(AdminUserPatchedUser.self)
         let serviceRequest = AdminUserPatchOperationRequest(
@@ -58,8 +52,6 @@ public struct AdminUserController: Sendable {
     }
 
     private func delete(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.User.Delete")
-        _ = securityRequest
         let userId = try GeneratedRequestValueParser.required(req.parameters.get("user_id"), name: "user_id", as: Int64.self)
         let serviceRequest = AdminUserDeleteOperationRequest(
             userId: userId,
@@ -69,8 +61,6 @@ public struct AdminUserController: Sendable {
     }
 
     private func list(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.User.List")
-        _ = securityRequest
         let text = GeneratedRequestValueParser.optionalString(req.query[String.self, at: "text"])
         let serviceRequest = AdminUserListOperationRequest(
             text: text,
@@ -80,8 +70,6 @@ public struct AdminUserController: Sendable {
     }
 
     private func get(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.User.Get")
-        _ = securityRequest
         let userId = try GeneratedRequestValueParser.required(req.parameters.get("user_id"), name: "user_id", as: Int64.self)
         let serviceRequest = AdminUserGetOperationRequest(
             userId: userId,

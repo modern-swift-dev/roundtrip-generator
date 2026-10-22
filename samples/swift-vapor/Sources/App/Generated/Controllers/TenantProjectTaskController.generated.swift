@@ -20,8 +20,6 @@ public struct TenantProjectTaskController: Sendable {
     }
 
     private func create(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Tenant.ProjectTask.Create")
-        _ = securityRequest
         let tenantId = try GeneratedRequestValueParser.requiredString(req.headers.first(name: "X-Tenant-Id"), name: "X-Tenant-Id")
         let projectId = try GeneratedRequestValueParser.requiredString(req.parameters.get("project_id"), name: "project_id")
         let body = try req.content.decode(TenantProjectTaskTask.self)
@@ -35,8 +33,6 @@ public struct TenantProjectTaskController: Sendable {
     }
 
     private func patch(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Tenant.ProjectTask.Patch")
-        _ = securityRequest
         let tenantId = try GeneratedRequestValueParser.requiredString(req.headers.first(name: "X-Tenant-Id"), name: "X-Tenant-Id")
         let projectId = try GeneratedRequestValueParser.requiredString(req.parameters.get("project_id"), name: "project_id")
         let taskId = try GeneratedRequestValueParser.requiredString(req.parameters.get("task_id"), name: "task_id")
@@ -52,8 +48,6 @@ public struct TenantProjectTaskController: Sendable {
     }
 
     private func list(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Tenant.ProjectTask.List")
-        _ = securityRequest
         let tenantId = try GeneratedRequestValueParser.requiredString(req.headers.first(name: "X-Tenant-Id"), name: "X-Tenant-Id")
         let projectId = try GeneratedRequestValueParser.requiredString(req.parameters.get("project_id"), name: "project_id")
         let done = try GeneratedRequestValueParser.optional(req.query[String.self, at: "done"], name: "done", as: Bool.self)
@@ -67,8 +61,6 @@ public struct TenantProjectTaskController: Sendable {
     }
 
     private func get(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Tenant.ProjectTask.Get")
-        _ = securityRequest
         let tenantId = try GeneratedRequestValueParser.requiredString(req.headers.first(name: "X-Tenant-Id"), name: "X-Tenant-Id")
         let projectId = try GeneratedRequestValueParser.requiredString(req.parameters.get("project_id"), name: "project_id")
         let taskId = try GeneratedRequestValueParser.requiredString(req.parameters.get("task_id"), name: "task_id")

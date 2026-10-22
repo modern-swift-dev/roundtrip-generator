@@ -21,8 +21,6 @@ public struct LocationStructureController: Sendable {
     }
 
     private func create(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Location.Structure.Create")
-        _ = securityRequest
         let body = try req.content.decode(LocationStructureStructure.self)
         let serviceRequest = LocationStructureCreateOperationRequest(
             body: body,
@@ -32,8 +30,6 @@ public struct LocationStructureController: Sendable {
     }
 
     private func update(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Location.Structure.Update")
-        _ = securityRequest
         let structureId = try GeneratedRequestValueParser.required(req.parameters.get("structure_id"), name: "structure_id", as: Int64.self)
         let body = try req.content.decode(LocationStructureStructure.self)
         let serviceRequest = LocationStructureUpdateOperationRequest(
@@ -45,8 +41,6 @@ public struct LocationStructureController: Sendable {
     }
 
     private func patch(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Location.Structure.Patch")
-        _ = securityRequest
         let structureId = try GeneratedRequestValueParser.required(req.parameters.get("structure_id"), name: "structure_id", as: Int64.self)
         let body = try req.content.decode(LocationStructurePatchedStructure.self)
         let serviceRequest = LocationStructurePatchOperationRequest(
@@ -58,8 +52,6 @@ public struct LocationStructureController: Sendable {
     }
 
     private func delete(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Location.Structure.Delete")
-        _ = securityRequest
         let structureId = try GeneratedRequestValueParser.required(req.parameters.get("structure_id"), name: "structure_id", as: Int64.self)
         let serviceRequest = LocationStructureDeleteOperationRequest(
             structureId: structureId,
@@ -69,8 +61,6 @@ public struct LocationStructureController: Sendable {
     }
 
     private func list(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Location.Structure.List")
-        _ = securityRequest
         let text = GeneratedRequestValueParser.optionalString(req.query[String.self, at: "text"])
         let type = try GeneratedRequestValueParser.requiredStringRawEnumArray(req.query[String.self, at: "type"], name: "type", as: StructureType.self)
         let serviceRequest = LocationStructureListOperationRequest(
@@ -82,8 +72,6 @@ public struct LocationStructureController: Sendable {
     }
 
     private func get(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Location.Structure.Get")
-        _ = securityRequest
         let structureId = try GeneratedRequestValueParser.required(req.parameters.get("structure_id"), name: "structure_id", as: Int64.self)
         let serviceRequest = LocationStructureGetOperationRequest(
             structureId: structureId,

@@ -21,8 +21,6 @@ public struct AdminGroupController: Sendable {
     }
 
     private func create(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.Group.Create")
-        _ = securityRequest
         let body = try req.content.decode(AdminGroupGroup.self)
         let serviceRequest = AdminGroupCreateOperationRequest(
             body: body,
@@ -32,8 +30,6 @@ public struct AdminGroupController: Sendable {
     }
 
     private func update(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.Group.Update")
-        _ = securityRequest
         let groupId = try GeneratedRequestValueParser.required(req.parameters.get("group_id"), name: "group_id", as: Int64.self)
         let body = try req.content.decode(AdminGroupGroup.self)
         let serviceRequest = AdminGroupUpdateOperationRequest(
@@ -45,8 +41,6 @@ public struct AdminGroupController: Sendable {
     }
 
     private func patch(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.Group.Patch")
-        _ = securityRequest
         let groupId = try GeneratedRequestValueParser.required(req.parameters.get("group_id"), name: "group_id", as: Int64.self)
         let body = try req.content.decode(AdminGroupPatchedGroup.self)
         let serviceRequest = AdminGroupPatchOperationRequest(
@@ -58,8 +52,6 @@ public struct AdminGroupController: Sendable {
     }
 
     private func delete(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.Group.Delete")
-        _ = securityRequest
         let groupId = try GeneratedRequestValueParser.required(req.parameters.get("group_id"), name: "group_id", as: Int64.self)
         let serviceRequest = AdminGroupDeleteOperationRequest(
             groupId: groupId,
@@ -69,8 +61,6 @@ public struct AdminGroupController: Sendable {
     }
 
     private func list(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.Group.List")
-        _ = securityRequest
         let text = GeneratedRequestValueParser.optionalString(req.query[String.self, at: "text"])
         let serviceRequest = AdminGroupListOperationRequest(
             text: text,
@@ -80,8 +70,6 @@ public struct AdminGroupController: Sendable {
     }
 
     private func get(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.Group.Get")
-        _ = securityRequest
         let groupId = try GeneratedRequestValueParser.required(req.parameters.get("group_id"), name: "group_id", as: Int64.self)
         let serviceRequest = AdminGroupGetOperationRequest(
             groupId: groupId,

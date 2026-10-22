@@ -21,8 +21,6 @@ public struct TenantProjectController: Sendable {
     }
 
     private func create(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Tenant.Project.Create")
-        _ = securityRequest
         let tenantId = try GeneratedRequestValueParser.requiredString(req.headers.first(name: "X-Tenant-Id"), name: "X-Tenant-Id")
         let body = try req.content.decode(TenantProjectProject.self)
         let serviceRequest = TenantProjectCreateOperationRequest(
@@ -34,8 +32,6 @@ public struct TenantProjectController: Sendable {
     }
 
     private func update(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Tenant.Project.Update")
-        _ = securityRequest
         let tenantId = try GeneratedRequestValueParser.requiredString(req.headers.first(name: "X-Tenant-Id"), name: "X-Tenant-Id")
         let projectId = try GeneratedRequestValueParser.requiredString(req.parameters.get("project_id"), name: "project_id")
         let body = try req.content.decode(TenantProjectProject.self)
@@ -49,8 +45,6 @@ public struct TenantProjectController: Sendable {
     }
 
     private func delete(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Tenant.Project.Delete")
-        _ = securityRequest
         let tenantId = try GeneratedRequestValueParser.requiredString(req.headers.first(name: "X-Tenant-Id"), name: "X-Tenant-Id")
         let projectId = try GeneratedRequestValueParser.requiredString(req.parameters.get("project_id"), name: "project_id")
         let serviceRequest = TenantProjectDeleteOperationRequest(
@@ -62,8 +56,6 @@ public struct TenantProjectController: Sendable {
     }
 
     private func list(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Tenant.Project.List")
-        _ = securityRequest
         let tenantId = try GeneratedRequestValueParser.requiredString(req.headers.first(name: "X-Tenant-Id"), name: "X-Tenant-Id")
         let status = try (GeneratedRequestValueParser.optionalStringRawEnumArray(req.query[String.self, at: "status"], name: "status", as: TenantStatus.self)) ?? [.active]
         let includeArchived = try (GeneratedRequestValueParser.optional(req.query[String.self, at: "include_archived"], name: "include_archived", as: Bool.self)) ?? false
@@ -77,8 +69,6 @@ public struct TenantProjectController: Sendable {
     }
 
     private func get(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Tenant.Project.Get")
-        _ = securityRequest
         let tenantId = try GeneratedRequestValueParser.requiredString(req.headers.first(name: "X-Tenant-Id"), name: "X-Tenant-Id")
         let projectId = try GeneratedRequestValueParser.requiredString(req.parameters.get("project_id"), name: "project_id")
         let serviceRequest = TenantProjectGetOperationRequest(

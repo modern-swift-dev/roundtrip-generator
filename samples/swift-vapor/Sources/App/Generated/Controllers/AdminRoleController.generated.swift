@@ -21,8 +21,6 @@ public struct AdminRoleController: Sendable {
     }
 
     private func create(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.Role.Create")
-        _ = securityRequest
         let body = try req.content.decode(AdminRoleRole.self)
         let serviceRequest = AdminRoleCreateOperationRequest(
             body: body,
@@ -32,8 +30,6 @@ public struct AdminRoleController: Sendable {
     }
 
     private func update(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.Role.Update")
-        _ = securityRequest
         let roleId = try GeneratedRequestValueParser.required(req.parameters.get("role_id"), name: "role_id", as: Int64.self)
         let body = try req.content.decode(AdminRoleRole.self)
         let serviceRequest = AdminRoleUpdateOperationRequest(
@@ -45,8 +41,6 @@ public struct AdminRoleController: Sendable {
     }
 
     private func patch(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.Role.Patch")
-        _ = securityRequest
         let roleId = try GeneratedRequestValueParser.required(req.parameters.get("role_id"), name: "role_id", as: Int64.self)
         let body = try req.content.decode(AdminRolePatchedRole.self)
         let serviceRequest = AdminRolePatchOperationRequest(
@@ -58,8 +52,6 @@ public struct AdminRoleController: Sendable {
     }
 
     private func delete(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.Role.Delete")
-        _ = securityRequest
         let roleId = try GeneratedRequestValueParser.required(req.parameters.get("role_id"), name: "role_id", as: Int64.self)
         let serviceRequest = AdminRoleDeleteOperationRequest(
             roleId: roleId,
@@ -69,8 +61,6 @@ public struct AdminRoleController: Sendable {
     }
 
     private func list(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.Role.List")
-        _ = securityRequest
         let text = GeneratedRequestValueParser.optionalString(req.query[String.self, at: "text"])
         let serviceRequest = AdminRoleListOperationRequest(
             text: text,
@@ -80,8 +70,6 @@ public struct AdminRoleController: Sendable {
     }
 
     private func get(req: Request) async throws -> Response {
-        let securityRequest = GeneratedSecurityRequest(request: req, operationID: "Admin.Role.Get")
-        _ = securityRequest
         let roleId = try GeneratedRequestValueParser.required(req.parameters.get("role_id"), name: "role_id", as: Int64.self)
         let serviceRequest = AdminRoleGetOperationRequest(
             roleId: roleId,

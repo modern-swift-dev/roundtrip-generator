@@ -187,10 +187,7 @@ struct SwiftVaporOperationEmitter {
         let securityLines = securityLines(operation)
         let responseLine = responseEncodeLine(operation)
 
-        let body = ([
-            "        let securityRequest = GeneratedSecurityRequest(request: req, operationID: \(operationID(operation).swiftVaporStringLiteral))",
-            securityLines
-        ] + paramLines + bodyLines + [
+        let body = (securityLines + paramLines + bodyLines + [
             "        let serviceRequest = \(serviceRequestSource)",
             "        let serviceResponse = try await service.\(operation.swiftVaporOperationName)(serviceRequest)",
             "        return \(responseLine)"
@@ -408,14 +405,16 @@ struct SwiftVaporOperationEmitter {
         }
     }
 
-    private func securityLines(_ operation: ApiOperation) -> String {
-        switch operation.security {
+    /// Unsecured operations skip building a `GeneratedSecurityRequest`: it copies every header and parses cookies.
+    private func securityLines(_ operation: ApiOperation) -> [String] {
+        let securityRequest = "        let securityRequest = GeneratedSecurityRequest(request: req, operationID: \(operationID(operation).swiftVaporStringLiteral))"
+        return switch operation.security {
             case .secured:
-                "        try await security.requireAuthorization(securityRequest)"
+                [securityRequest, "        try await security.requireAuthorization(securityRequest)"]
             case .optional:
-                "        try await security.authorizeOptional(securityRequest)"
+                [securityRequest, "        try await security.authorizeOptional(securityRequest)"]
             case .unsecured:
-                "        _ = securityRequest"
+                []
         }
     }
 
